@@ -1,0 +1,56 @@
+---
+import Base from '../layouts/Base.astro'
+import MoteurFacettes from '../components/MoteurFacettes.jsx'
+import { getLivres, getColonnesMeta } from '../lib/parseData'
+
+const livres = getLivres()
+const colonnesMeta = getColonnesMeta(livres)
+
+// Sérialiser pour le composant React (client-side)
+const livresJson = JSON.stringify(livres)
+const colonnesJson = JSON.stringify(colonnesMeta)
+---
+
+<Base titre="Recherche" description="Moteur de recherche à facettes">
+  <div class="conteneur">
+    <div class="page-entete">
+      <h1 class="page-titre">
+        <span class="material-icons">manage_search</span>
+        Recherche
+      </h1>
+      <p class="page-description">
+        Filtrez la collection par critères ou recherchez dans les titres et auteurs.
+      </p>
+    </div>
+
+    <MoteurFacettes
+      livres={JSON.parse(livresJson)}
+      colonnesMeta={JSON.parse(colonnesJson)}
+      client:load
+    />
+  </div>
+</Base>
+
+<style>
+  .page-entete {
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--md-divider);
+  }
+
+  .page-titre {
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: 2rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .page-titre .material-icons { color: var(--md-primary); font-size: 2rem; }
+
+  .page-description {
+    color: var(--md-on-surface-medium);
+  }
+</style>

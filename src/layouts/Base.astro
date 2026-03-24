@@ -1,0 +1,250 @@
+---
+export interface Props {
+  titre?: string
+  description?: string
+}
+const { titre = 'Bibliothèque Numérique', description = '' } = Astro.props
+const siteNom = 'Bibliothèque Numérique'
+---
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <title>{titre ? `${titre} — ${siteNom}` : siteNom}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+  </head>
+  <body>
+    <!-- Navigation -->
+    <nav class="nav-principale">
+      <div class="nav-contenu">
+        <a href="/" class="nav-logo">
+          <span class="material-icons">auto_stories</span>
+          <span>{siteNom}</span>
+        </a>
+        <div class="nav-liens">
+          <a href="/" class="nav-lien">Accueil</a>
+          <a href="/recherche" class="nav-lien">Recherche</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Contenu principal -->
+    <main>
+      <slot />
+    </main>
+
+    <!-- Pied de page -->
+    <footer class="pied-de-page">
+      <div class="pied-contenu">
+        <p>Bibliothèque Numérique — Humanités Numériques</p>
+      </div>
+    </footer>
+  </body>
+</html>
+
+<style is:global>
+  /* ── Variables Material Design ── */
+  :root {
+    --md-primary: #1a237e;         /* indigo-900 */
+    --md-primary-light: #534bae;
+    --md-primary-dark: #000051;
+    --md-secondary: #b71c1c;       /* red-900, pour les accents */
+    --md-surface: #ffffff;
+    --md-background: #f5f5f5;
+    --md-on-primary: #ffffff;
+    --md-on-surface: #212121;
+    --md-on-surface-medium: #757575;
+    --md-divider: #e0e0e0;
+    --md-elevation-1: 0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.24);
+    --md-elevation-2: 0 3px 6px rgba(0,0,0,.15), 0 2px 4px rgba(0,0,0,.12);
+    --md-elevation-4: 0 10px 20px rgba(0,0,0,.15), 0 3px 6px rgba(0,0,0,.10);
+
+    --font-corps: 'Inter', sans-serif;
+    --font-texte: 'Crimson Pro', Georgia, serif;
+    --radius: 4px;
+    --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-corps);
+    background: var(--md-background);
+    color: var(--md-on-surface);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  main { flex: 1; }
+
+  a { color: var(--md-primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Navigation ── */
+  .nav-principale {
+    background: var(--md-primary);
+    box-shadow: var(--md-elevation-2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .nav-contenu {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 24px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--md-on-primary);
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+  }
+
+  .nav-logo .material-icons { font-size: 28px; }
+
+  .nav-liens { display: flex; gap: 8px; }
+
+  .nav-lien {
+    color: rgba(255,255,255,0.87);
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background var(--transition);
+  }
+
+  .nav-lien:hover {
+    background: rgba(255,255,255,0.12);
+    text-decoration: none;
+  }
+
+  /* ── Conteneur générique ── */
+  .conteneur {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  /* ── Carte Material ── */
+  .carte {
+    background: var(--md-surface);
+    border-radius: var(--radius);
+    box-shadow: var(--md-elevation-1);
+    transition: box-shadow var(--transition);
+    overflow: hidden;
+  }
+
+  .carte:hover {
+    box-shadow: var(--md-elevation-4);
+  }
+
+  /* ── Chip ── */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 16px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: #e8eaf6;
+    color: var(--md-primary);
+    gap: 4px;
+  }
+
+  /* ── Bouton Material ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    font-family: var(--font-corps);
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border: none;
+    cursor: pointer;
+    transition: background var(--transition), box-shadow var(--transition);
+  }
+
+  .btn-primary {
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+    box-shadow: var(--md-elevation-1);
+  }
+
+  .btn-primary:hover {
+    background: var(--md-primary-light);
+    box-shadow: var(--md-elevation-2);
+  }
+
+  .btn-outlined {
+    background: transparent;
+    color: var(--md-primary);
+    border: 1px solid var(--md-primary);
+  }
+
+  /* ── Transcription ── */
+  .transcription-paragraphe {
+    font-family: var(--font-texte);
+    font-size: 1.1rem;
+    line-height: 1.8;
+    margin-bottom: 1rem;
+    text-align: justify;
+  }
+
+  .transcription-personne {
+    color: var(--md-secondary);
+    border-bottom: 1px dotted var(--md-secondary);
+    cursor: help;
+  }
+
+  .transcription-lieu {
+    color: var(--md-primary);
+    border-bottom: 1px dotted var(--md-primary);
+    cursor: help;
+  }
+
+  .transcription-hi[data-rend="italic"] { font-style: italic; }
+  .transcription-hi[data-rend="bold"] { font-weight: bold; }
+
+  .transcription-note {
+    font-size: 0.9rem;
+    color: var(--md-on-surface-medium);
+    border-left: 3px solid var(--md-divider);
+    padding-left: 12px;
+    margin: 8px 0;
+  }
+
+  /* ── Pied de page ── */
+  .pied-de-page {
+    background: var(--md-primary-dark);
+    color: rgba(255,255,255,0.6);
+    padding: 24px;
+    margin-top: auto;
+  }
+
+  .pied-contenu {
+    max-width: 1400px;
+    margin: 0 auto;
+    text-align: center;
+    font-size: 0.875rem;
+  }
+</style>

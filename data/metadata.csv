@@ -1,0 +1,22 @@
+id,Originale,Langues,"Manuscrit /
+imprimé ","Gothique /
+romain","Prose
+vers","Auteur
+déclaré",auteur,"Fonction
+déclarée","Type
+auteur",Fait,"Changement
+titre",Titre générique,titre,Lieu,Pays,"Lieu
+fictif",Editeur,"Editeur
+normalisé","Éditeur
+fictif",Date publication,"Date
+calculée","Ed.
+partagée",Format,Privilège,"Durée du
+privilège","Table
+nb de p.",Gravures,"Nb
+d’histoires",Paginé / folioté,Nb de pages,Genre nouvelle,"Rire du
+pouvoir","Rire des
+mœurs","Rire de la
+religion","Rire des
+protestants",Bibliothèque,Cote,Numérisation,Traduction,"Autres
+Bibliothèques",manifeste_url
+Livre-01,oui,Fr,imprimé,Gothique,prose,Julien Macho,Julien Macho,frère augustin docteur en théologie,Auteur,,,Fables d'Ésope,"Les Subtiles fables d'Esope, traduites par Julien Macho, Augustin et suivies de fables d'Avien, d'Alphonse et de Pogge",Lyon,France,,Nicolaus Philippi et Marcus Reinhart,,,1480,1480,,folio,non,,,,,,292,Nouvelles / fables / ,,,,,BM Tours,,,,,http://localhost:4321/manifestes/10.34847-nkl.5be8vpp2.json

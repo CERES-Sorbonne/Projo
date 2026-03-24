@@ -1,0 +1,84 @@
+---
+import type { Livre } from '../lib/parseData'
+
+export interface Props {
+  livre: Livre
+}
+
+const { livre } = Astro.props
+const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
+const date = livre.date as string | undefined
+---
+
+<a href={`/livres/${livre.id}`} class="carte carte-livre">
+  <div class="carte-livre-corps">
+    <div class="carte-livre-icone">
+      <span class="material-icons">menu_book</span>
+    </div>
+    <div class="carte-livre-info">
+      <h3 class="carte-livre-titre">{livre.titre}</h3>
+      {livre.sous_titre && (
+        <p class="carte-livre-sous-titre">{livre.sous_titre}</p>
+      )}
+      <p class="carte-livre-auteur">{auteurs}</p>
+      {date && (
+        <span class="chip">
+          <span class="material-icons" style="font-size:14px">calendar_today</span>
+          {date}
+        </span>
+      )}
+    </div>
+  </div>
+</a>
+
+<style>
+  .carte-livre {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .carte-livre-corps {
+    display: flex;
+    gap: 16px;
+    padding: 20px;
+    align-items: flex-start;
+  }
+
+  .carte-livre-icone {
+    width: 48px;
+    height: 48px;
+    background: #e8eaf6;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--md-primary);
+  }
+
+  .carte-livre-info { flex: 1; min-width: 0; }
+
+  .carte-livre-titre {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .carte-livre-sous-titre {
+    font-size: 0.875rem;
+    color: var(--md-on-surface-medium);
+    margin-bottom: 4px;
+    font-style: italic;
+  }
+
+  .carte-livre-auteur {
+    font-size: 0.875rem;
+    color: var(--md-on-surface-medium);
+    margin-bottom: 8px;
+  }
+</style>

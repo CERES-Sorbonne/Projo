@@ -1,0 +1,279 @@
+---
+import Base from '../../layouts/Base.astro'
+import MiradorViewer from '../../components/MiradorViewer.jsx'
+import { getLivres, getLivreAvecTranscription } from '../../lib/parseData'
+
+export async function getStaticPaths() {
+  const livres = getLivres()
+  return livres.map(livre => ({
+    params: { id: livre.id },
+  }))
+}
+
+const { id } = Astro.params
+const livre = getLivreAvecTranscription(id!)
+
+if (!livre) {
+  return Astro.redirect('/404')
+}
+
+const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
+
+// Colonnes supplémentaires à afficher dans les métadonnées
+const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages'])
+const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
+---
+
+<Base titre={livre.titre} description={`${livre.titre} — ${auteurs}`}>
+  <!-- En-tête du livre -->
+  <div class="livre-entete">
+    <div class="conteneur">
+      <div class="livre-entete-contenu">
+        <div>
+          <div class="fil-ariane">
+            <a href="/">Accueil</a>
+            <span class="material-icons" style="font-size:16px;opacity:0.5">chevron_right</span>
+            <span>Collection</span>
+            <span class="material-icons" style="font-size:16px;opacity:0.5">chevron_right</span>
+            <span>{livre.titre}</span>
+          </div>
+          <h1 class="livre-titre">{livre.titre}</h1>
+          {livre.sous_titre && <p class="livre-sous-titre">{livre.sous_titre as string}</p>}
+          <p class="livre-auteur">{auteurs}</p>
+          <div class="livre-chips">
+            {metaSupp.map(([cle, val]) => (
+              <span class="chip">
+                <strong>{cle.replace(/_/g, ' ')}</strong>&nbsp;{String(val)}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Corps principal : viewer + transcription -->
+  <div class="conteneur">
+    <div class="livre-corps">
+      <!-- Viewer Mirador -->
+      <section class="viewer-section carte">
+        <div class="section-onglets">
+          <button class="onglet actif" id="btn-viewer" onclick="afficherPanel('viewer')">
+            <span class="material-icons">image</span>
+            Pages numérisées
+          </button>
+          <button class="onglet" id="btn-transcription" onclick="afficherPanel('transcription')">
+            <span class="material-icons">subject</span>
+            Transcription
+          </button>
+        </div>
+
+        <!-- Panel Mirador -->
+        <div id="panel-viewer" class="panel actif">
+          <MiradorViewer
+            manifestUrl={livre.manifeste_url}
+            client:only="react"
+          />
+        </div>
+
+        <!-- Panel Transcription -->
+        <div id="panel-transcription" class="panel">
+          {livre.transcriptionPages.length > 0 ? (
+            <div class="transcription-conteneur">
+              <!-- Navigation par page -->
+              {livre.transcriptionPages.length > 1 && (
+                <div class="transcription-nav">
+                  {livre.transcriptionPages.map((page, i) => (
+                    <button
+                      class="transcription-page-btn"
+                      onclick={`afficherPage(${i})`}
+                      id={`btn-page-${i}`}
+                    >
+                      p. {page.n}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <!-- Contenu des pages -->
+              {livre.transcriptionPages.map((page, i) => (
+                <div
+                  id={`page-${i}`}
+                  class={`transcription-page ${i === 0 ? 'active' : ''}`}
+                >
+                  <div class="transcription-page-entete">
+                    <span class="chip">
+                      <span class="material-icons" style="font-size:14px">description</span>
+                      Page {page.n}
+                    </span>
+                  </div>
+                  <div class="transcription-texte" set:html={page.html} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div class="transcription-vide">
+              <span class="material-icons">info</span>
+              <p>Aucune transcription disponible pour ce livre.</p>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  </div>
+</Base>
+
+<script>
+  // Gestion des onglets viewer / transcription
+  function afficherPanel(nom: string) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('actif'))
+    document.querySelectorAll('.onglet').forEach(b => b.classList.remove('actif'))
+    document.getElementById(`panel-${nom}`)?.classList.add('actif')
+    document.getElementById(`btn-${nom}`)?.classList.add('actif')
+  }
+
+  // Navigation entre pages de transcription
+  function afficherPage(index: number) {
+    document.querySelectorAll('.transcription-page').forEach((p, i) => {
+      p.classList.toggle('active', i === index)
+    })
+    document.querySelectorAll('.transcription-page-btn').forEach((b, i) => {
+      b.classList.toggle('actif', i === index)
+    })
+  }
+
+  // Exposer globalement pour les onclick inline
+  ;(window as any).afficherPanel = afficherPanel
+  ;(window as any).afficherPage = afficherPage
+</script>
+
+<style>
+  .livre-entete {
+    background: var(--md-surface);
+    border-bottom: 1px solid var(--md-divider);
+    padding: 24px 0;
+  }
+
+  .fil-ariane {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8rem;
+    color: var(--md-on-surface-medium);
+    margin-bottom: 12px;
+  }
+
+  .fil-ariane a { color: var(--md-primary); }
+
+  .livre-titre {
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: clamp(1.5rem, 3vw, 2.25rem);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .livre-sous-titre {
+    font-size: 1.1rem;
+    font-style: italic;
+    color: var(--md-on-surface-medium);
+    margin-bottom: 4px;
+  }
+
+  .livre-auteur {
+    color: var(--md-on-surface-medium);
+    margin-bottom: 12px;
+  }
+
+  .livre-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .livre-corps { margin-top: 24px; }
+
+  /* ── Onglets ── */
+  .section-onglets {
+    display: flex;
+    border-bottom: 1px solid var(--md-divider);
+    background: var(--md-surface);
+  }
+
+  .onglet {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 24px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-family: var(--font-corps);
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--md-on-surface-medium);
+    border-bottom: 3px solid transparent;
+    margin-bottom: -1px;
+    transition: color var(--transition), border-color var(--transition);
+  }
+
+  .onglet.actif {
+    color: var(--md-primary);
+    border-bottom-color: var(--md-primary);
+  }
+
+  .onglet:hover { color: var(--md-primary); background: rgba(26,35,126,0.04); }
+
+  /* ── Panels ── */
+  .panel { display: none; }
+  .panel.actif { display: block; }
+
+  /* ── Transcription ── */
+  .transcription-conteneur { padding: 24px; }
+
+  .transcription-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--md-divider);
+  }
+
+  .transcription-page-btn {
+    padding: 4px 12px;
+    border-radius: 16px;
+    border: 1px solid var(--md-divider);
+    background: none;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--md-on-surface-medium);
+    transition: all var(--transition);
+  }
+
+  .transcription-page-btn.actif,
+  .transcription-page-btn:hover {
+    background: var(--md-primary);
+    color: white;
+    border-color: var(--md-primary);
+  }
+
+  .transcription-page { display: none; }
+  .transcription-page.active { display: block; }
+
+  .transcription-page-entete { margin-bottom: 16px; }
+
+  .transcription-texte {
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
+  .transcription-vide {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 64px;
+    color: var(--md-on-surface-medium);
+    gap: 12px;
+  }
+
+  .transcription-vide .material-icons { font-size: 48px; opacity: 0.4; }
+</style>

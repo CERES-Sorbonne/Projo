@@ -1,0 +1,140 @@
+---
+import Base from '../layouts/Base.astro'
+import CarteLivre from '../components/CarteLivre.astro'
+import { getLivres } from '../lib/parseData'
+
+const livres = getLivres()
+---
+
+<Base titre="Accueil">
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-contenu">
+      <span class="material-icons hero-icone">auto_stories</span>
+      <h1 class="hero-titre">Bibliothèque Numérique</h1>
+      <p class="hero-description">
+        Explorez notre collection de textes numérisés. Parcourez les pages en haute résolution,
+        lisez les transcriptions annotées et recherchez dans l'ensemble du corpus.
+      </p>
+      <div class="hero-actions">
+        <a href="/recherche" class="btn btn-primary">
+          <span class="material-icons">search</span>
+          Moteur de recherche
+        </a>
+        <a href="#collection" class="btn btn-outlined" style="color:white;border-color:rgba(255,255,255,0.6)">
+          <span class="material-icons">library_books</span>
+          Parcourir la collection
+        </a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat">
+          <span class="stat-valeur">{livres.length}</span>
+          <span class="stat-label">livres</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Collection -->
+  <section id="collection" class="conteneur">
+    <div class="section-entete">
+      <h2 class="section-titre">Collection</h2>
+      <p class="section-sous-titre">{livres.length} œuvres numérisées</p>
+    </div>
+
+    <div class="grille-livres">
+      {livres.map(livre => <CarteLivre livre={livre} />)}
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero {
+    background: linear-gradient(135deg, var(--md-primary-dark) 0%, var(--md-primary) 60%, var(--md-primary-light) 100%);
+    color: white;
+    padding: 80px 24px;
+    text-align: center;
+  }
+
+  .hero-contenu {
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .hero-icone {
+    font-size: 64px;
+    opacity: 0.9;
+    margin-bottom: 16px;
+    display: block;
+  }
+
+  .hero-titre {
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    font-weight: 600;
+    margin-bottom: 16px;
+    letter-spacing: -0.01em;
+  }
+
+  .hero-description {
+    font-size: 1.125rem;
+    line-height: 1.6;
+    opacity: 0.87;
+    margin-bottom: 32px;
+  }
+
+  .hero-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 48px;
+  }
+
+  .hero-stats {
+    display: flex;
+    gap: 48px;
+    justify-content: center;
+  }
+
+  .stat { text-align: center; }
+
+  .stat-valeur {
+    display: block;
+    font-size: 2.5rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 0.875rem;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .section-entete {
+    margin-bottom: 24px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  .section-titre {
+    font-family: 'Crimson Pro', Georgia, serif;
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--md-on-surface);
+  }
+
+  .section-sous-titre {
+    color: var(--md-on-surface-medium);
+    font-size: 0.9rem;
+  }
+
+  .grille-livres {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+</style>

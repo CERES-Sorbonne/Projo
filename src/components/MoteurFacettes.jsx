@@ -79,15 +79,49 @@ function FacetteTexte({ meta, valeurActive, onChange }) {
   )
 }
 
+/**
+ * Extrait un passage de contexte autour d'une position dans le texte.
+ * Retourne du JSX avec le terme surligné.
+ */
+function ExtraitTranscription({ texte, indices }) {
+  if (!texte || !indices?.length) return null
+
+  // Prendre le premier match, centrer une fenêtre de ~160 caractères
+  const [debut, fin] = indices[0]
+  const FENETRE = 80
+  const start = Math.max(0, debut - FENETRE)
+  const end   = Math.min(texte.length, fin + 1 + FENETRE)
+
+  const avant     = texte.slice(start, debut)
+  const terme     = texte.slice(debut, fin + 1)
+  const apres     = texte.slice(fin + 1, end)
+  const ellipseD  = start > 0
+  const ellipseF  = end < texte.length
+
+  return (
+    <div className="extrait-transcription">
+      <span className="material-icons extrait-icone">format_quote</span>
+      <p className="extrait-texte">
+        {ellipseD && <span className="extrait-ellipse">…</span>}
+        {avant}
+        <mark className="extrait-mark">{terme}</mark>
+        {apres}
+        {ellipseF && <span className="extrait-ellipse">…</span>}
+      </p>
+    </div>
+  )
+}
 // ─── Carte résultat ───────────────────────────────────────────────────────────
 
 function CarteResultat({ livre, colonnesMeta }) {
   const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
-  const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url'])
+  const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url',
+                             '_transcriptionTexte', '_matchesTranscription'])
   const metaSupp = colonnesMeta.filter(m => !RESERVEES.has(m.key))
+  const matchTranscription = livre._matchesTranscription?.[0]
 
   return (
-    <a href={`/livres/${livre.id}`} className="carte-resultat">
+    <a href={`/livres/${livre.id}`} className={`carte-resultat${matchTranscription ? ' carte-resultat--transcription' : ''}`}>
       <div className="carte-resultat-icone">
         <span className="material-icons">menu_book</span>
       </div>
@@ -103,7 +137,21 @@ function CarteResultat({ livre, colonnesMeta }) {
               <strong>{m.label}</strong>&nbsp;{String(livre[m.key] ?? '')}
             </span>
           ))}
+          {matchTranscription && (
+            <span className="chip chip--transcription">
+              <span className="material-icons" style={{fontSize:'13px'}}>history_edu</span>
+              Trouvé dans la transcription
+            </span>
+          )}
         </div>
+
+        {/* Extrait de transcription */}
+        {matchTranscription && (
+          <ExtraitTranscription
+            texte={livre._transcriptionTexte}
+            indices={matchTranscription.indices}
+          />
+        )}
       </div>
       <span className="material-icons carte-resultat-fleche">chevron_right</span>
     </a>
@@ -117,10 +165,16 @@ export default function MoteurFacettes({ livres, colonnesMeta }) {
   const [filtres, setFiltres] = useState({})
 
   // Index Fuse.js — recalculé une seule fois
-  const fuse = useMemo(() => new Fuse(livres, {
-    keys: ['titre', 'sous_titre', 'auteur'],
+   const fuse = useMemo(() => new Fuse(livres, {
+    keys: [
+      { name: 'titre',                weight: 0.4 },
+      { name: 'sous_titre',           weight: 0.2 },
+      { name: 'auteur',               weight: 0.2 },
+      { name: '_transcriptionTexte',  weight: 0.2 },
+    ],
     threshold: 0.35,
     includeScore: true,
+    includeMatches: true,   // ← nouveau : pour extraire les passages trouvés
   }), [livres])
 
   const majFiltres = (key, valeur) => {
@@ -132,36 +186,42 @@ export default function MoteurFacettes({ livres, colonnesMeta }) {
     setFiltres({})
   }
 
-  // Application des filtres
-  const resultats = useMemo(() => {
-    // 1. Recherche textuelle (Fuse.js)
-    let base = recherche.trim()
-      ? fuse.search(recherche).map(r => r.item)
-      : [...livres]
+ const resultats = useMemo(() => {
+  let base
 
-    // 2. Filtres par facette
-    for (const meta of colonnesMeta) {
-      const filtre = filtres[meta.key]
-      if (!filtre || (Array.isArray(filtre) && filtre.length === 0)) continue
+  if (recherche.trim()) {
+    const fuseResultats = fuse.search(recherche)
+    // On associe à chaque livre ses matches de transcription
+    const matchesParId = {}
+    fuseResultats.forEach(r => {
+      matchesParId[r.item.id] = r.matches ?? []
+    })
+    base = fuseResultats.map(r => ({
+      ...r.item,
+      _matchesTranscription: (r.matches ?? [])
+        .filter(m => m.key === '_transcriptionTexte'),
+    }))
+  } else {
+    base = livres.map(l => ({ ...l, _matchesTranscription: [] }))
+  }
 
-      if (meta.type === 'select') {
-        base = base.filter(l => filtre.includes(String(l[meta.key] ?? '')))
-      } else if (meta.type === 'range') {
-        const [fMin, fMax] = filtre
-        base = base.filter(l => {
-          const v = Number(l[meta.key])
-          return v >= fMin && v <= fMax
-        })
-      } else if (meta.type === 'text') {
-        const terme = filtre.toLowerCase()
-        base = base.filter(l =>
-          String(l[meta.key] ?? '').toLowerCase().includes(terme)
-        )
-      }
+  // Filtres facettes — inchangés
+  for (const meta of colonnesMeta) {
+    const filtre = filtres[meta.key]
+    if (!filtre || (Array.isArray(filtre) && filtre.length === 0)) continue
+    if (meta.type === 'select') {
+      base = base.filter(l => filtre.includes(String(l[meta.key] ?? '')))
+    } else if (meta.type === 'range') {
+      const [fMin, fMax] = filtre
+      base = base.filter(l => { const v = Number(l[meta.key]); return v >= fMin && v <= fMax })
+    } else if (meta.type === 'text') {
+      const terme = filtre.toLowerCase()
+      base = base.filter(l => String(l[meta.key] ?? '').toLowerCase().includes(terme))
     }
+  }
 
-    return base
-  }, [recherche, filtres, livres, fuse, colonnesMeta])
+  return base
+}, [recherche, filtres, livres, fuse, colonnesMeta])
 
   const nbFiltresActifs = Object.values(filtres).filter(v =>
     v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)
@@ -448,6 +508,60 @@ export default function MoteurFacettes({ livres, colonnesMeta }) {
         }
 
         .resultats-vide .material-icons { font-size: 48px; opacity: 0.4; }
+
+        /* Carte avec match transcription */
+        .carte-resultat--transcription {
+          border-left: 3px solid #1a237e;
+        }
+        
+        /* Badge chip transcription */
+        .chip--transcription {
+          background: #e8eaf6;
+          color: #1a237e;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+        }
+        
+        /* Bloc extrait */
+        .extrait-transcription {
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          margin-top: 10px;
+          padding: 10px 12px;
+          background: #f5f5f5;
+          border-radius: 4px;
+          border-left: 3px solid #c5cae9;
+        }
+        
+        .extrait-icone {
+          font-size: 16px !important;
+          color: #9fa8da;
+          flex-shrink: 0;
+          margin-top: 2px;
+        }
+        
+        .extrait-texte {
+          font-family: 'Crimson Pro', Georgia, serif;
+          font-size: 0.9rem;
+          line-height: 1.6;
+          color: #424242;
+          margin: 0;
+        }
+        
+        .extrait-ellipse {
+          color: #9e9e9e;
+          margin: 0 2px;
+        }
+        
+        .extrait-mark {
+          background: #fff176;
+          color: #212121;
+          padding: 0 2px;
+          border-radius: 2px;
+          font-weight: 600;
+        }
       `}</style>
     </div>
   )

@@ -52,12 +52,38 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
     </div>
   </div>
 
-  <!-- Corps principal : viewer + transcription -->
+  <!-- Corps principal -->
   <div class="conteneur">
-    <div class="livre-corps">
-      <!-- Viewer Mirador -->
-      <section class="viewer-section carte">
-        <div class="section-onglets">
+    <!-- Barre de contrôle du mode d'affichage -->
+    <div class="mode-barre">
+      <div class="mode-boutons" role="group" aria-label="Mode d'affichage">
+        <button
+          id="btn-mode-onglets"
+          class="mode-btn actif"
+          onclick="setMode('onglets')"
+          title="Afficher en onglets"
+        >
+          <span class="material-icons">tab</span>
+          Onglets
+        </button>
+        <button
+          id="btn-mode-cote"
+          class="mode-btn"
+          onclick="setMode('cote')"
+          title="Afficher côte à côte"
+        >
+          <span class="material-icons">view_column</span>
+          Côte à côte
+        </button>
+      </div>
+    </div>
+
+    <!-- Wrapper principal — change de classe selon le mode -->
+    <div id="livre-corps" class="livre-corps mode-onglets">
+
+      <!-- ── MODE ONGLETS : viewer + transcription dans la même carte avec onglets ── -->
+      <section id="section-onglets" class="viewer-section carte">
+        <div class="section-onglets-nav">
           <button class="onglet actif" id="btn-viewer" onclick="afficherPanel('viewer')">
             <span class="material-icons">image</span>
             Pages numérisées
@@ -68,7 +94,6 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
           </button>
         </div>
 
-        <!-- Panel Mirador -->
         <div id="panel-viewer" class="panel actif">
           <MiradorViewer
             manifestUrl={livre.manifeste_url}
@@ -76,11 +101,9 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
           />
         </div>
 
-        <!-- Panel Transcription -->
         <div id="panel-transcription" class="panel">
           {livre.transcriptionPages.length > 0 ? (
             <div class="transcription-conteneur">
-              <!-- Navigation par page -->
               {livre.transcriptionPages.length > 1 && (
                 <div class="transcription-nav">
                   {livre.transcriptionPages.map((page, i) => (
@@ -94,8 +117,6 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
                   ))}
                 </div>
               )}
-
-              <!-- Contenu des pages -->
               {livre.transcriptionPages.map((page, i) => (
                 <div
                   id={`page-${i}`}
@@ -119,12 +140,72 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
           )}
         </div>
       </section>
-    </div>
+
+      <!-- ── MODE CÔTE À CÔTE : deux colonnes indépendantes ── -->
+      <div id="section-cote" class="cote-wrapper">
+        <!-- Colonne viewer -->
+        <section class="cote-colonne carte">
+          <div class="cote-entete">
+            <span class="material-icons">image</span>
+            Pages numérisées
+          </div>
+          <div class="cote-viewer">
+            <!-- Le viewer Mirador est partagé : on le déplace via JS selon le mode -->
+          </div>
+        </section>
+
+        <!-- Colonne transcription -->
+        <section class="cote-colonne carte">
+          <div class="cote-entete">
+            <span class="material-icons">subject</span>
+            Transcription
+          </div>
+          {livre.transcriptionPages.length > 0 ? (
+            <div class="transcription-conteneur cote-transcription-scroll">
+              {livre.transcriptionPages.length > 1 && (
+                <div class="transcription-nav">
+                  {livre.transcriptionPages.map((page, i) => (
+                    <button
+                      class="transcription-page-btn-cote"
+                      onclick={`afficherPageCote(${i})`}
+                      id={`btn-page-cote-${i}`}
+                    >
+                      p. {page.n}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {livre.transcriptionPages.map((page, i) => (
+                <div
+                  id={`page-cote-${i}`}
+                  class={`transcription-page ${i === 0 ? 'active' : ''}`}
+                >
+                  <div class="transcription-page-entete">
+                    <span class="chip">
+                      <span class="material-icons" style="font-size:14px">description</span>
+                      Page {page.n}
+                    </span>
+                  </div>
+                  <div class="transcription-texte" set:html={page.html} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div class="transcription-vide">
+              <span class="material-icons">info</span>
+              <p>Aucune transcription disponible.</p>
+            </div>
+          )}
+        </section>
+      </div>
+
+    </div><!-- fin #livre-corps -->
   </div>
 </Base>
 
 <script>
-  // Gestion des onglets viewer / transcription
+  // ── Gestion des onglets (mode onglets) ──────────────────────────────────────
+
   function afficherPanel(nom: string) {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('actif'))
     document.querySelectorAll('.onglet').forEach(b => b.classList.remove('actif'))
@@ -132,7 +213,6 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
     document.getElementById(`btn-${nom}`)?.classList.add('actif')
   }
 
-  // Navigation entre pages de transcription
   function afficherPage(index: number) {
     document.querySelectorAll('.transcription-page').forEach((p, i) => {
       p.classList.toggle('active', i === index)
@@ -142,12 +222,53 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
     })
   }
 
-  // Exposer globalement pour les onclick inline
+  function afficherPageCote(index: number) {
+    document.querySelectorAll('[id^="page-cote-"]').forEach((p, i) => {
+      p.classList.toggle('active', i === index)
+    })
+    document.querySelectorAll('.transcription-page-btn-cote').forEach((b, i) => {
+      b.classList.toggle('actif', i === index)
+    })
+  }
+
+  // ── Gestion du mode d'affichage ─────────────────────────────────────────────
+
+  function setMode(mode: 'onglets' | 'cote') {
+    const corps = document.getElementById('livre-corps')
+    const btnOnglets = document.getElementById('btn-mode-onglets')
+    const btnCote = document.getElementById('btn-mode-cote')
+
+    if (!corps) return
+
+    if (mode === 'onglets') {
+      corps.className = 'livre-corps mode-onglets'
+      btnOnglets?.classList.add('actif')
+      btnCote?.classList.remove('actif')
+    } else {
+      corps.className = 'livre-corps mode-cote'
+      btnOnglets?.classList.remove('actif')
+      btnCote?.classList.add('actif')
+    }
+
+    // Persister le choix dans sessionStorage
+    sessionStorage.setItem('livreMode', mode)
+  }
+
+  // Restaurer le mode au chargement
+  const modeSauvegarde = sessionStorage.getItem('livreMode') as 'onglets' | 'cote' | null
+  if (modeSauvegarde === 'cote') {
+    setMode('cote')
+  }
+
+  // Exposer globalement
   ;(window as any).afficherPanel = afficherPanel
   ;(window as any).afficherPage = afficherPage
+  ;(window as any).afficherPageCote = afficherPageCote
+  ;(window as any).setMode = setMode
 </script>
 
 <style>
+  /* ── En-tête du livre ── */
   .livre-entete {
     background: var(--md-surface);
     border-bottom: 1px solid var(--md-divider);
@@ -186,10 +307,66 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 
   .livre-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
-  .livre-corps { margin-top: 24px; }
+  /* ── Barre de sélection du mode ── */
+  .mode-barre {
+    display: flex;
+    justify-content: flex-end;
+    padding: 16px 0 8px;
+  }
 
-  /* ── Onglets ── */
-  .section-onglets {
+  .mode-boutons {
+    display: inline-flex;
+    background: var(--md-surface);
+    border: 1px solid var(--md-divider);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: var(--md-elevation-1);
+  }
+
+  .mode-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-family: var(--font-corps);
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--md-on-surface-medium);
+    transition: background var(--transition), color var(--transition);
+    border-right: 1px solid var(--md-divider);
+  }
+
+  .mode-btn:last-child { border-right: none; }
+
+  .mode-btn .material-icons { font-size: 18px; }
+
+  .mode-btn.actif {
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+  }
+
+  .mode-btn:not(.actif):hover {
+    background: rgba(26,35,126,0.06);
+    color: var(--md-primary);
+  }
+
+  /* ── Corps du livre ── */
+  .livre-corps { margin-bottom: 32px; }
+
+  /* MODE ONGLETS */
+  .mode-onglets #section-onglets { display: block; }
+  .mode-onglets #section-cote    { display: none; }
+
+  /* MODE CÔTE À CÔTE */
+  .mode-cote #section-onglets { display: none; }
+  .mode-cote #section-cote    { display: grid; }
+
+  /* ── Onglets (mode onglets) ── */
+  .section-onglets-nav {
     display: flex;
     border-bottom: 1px solid var(--md-divider);
     background: var(--md-surface);
@@ -221,11 +398,55 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 
   .onglet:hover { color: var(--md-primary); background: rgba(26,35,126,0.04); }
 
-  /* ── Panels ── */
   .panel { display: none; }
   .panel.actif { display: block; }
 
-  /* ── Transcription ── */
+  /* ── Mode côte à côte ── */
+  .cote-wrapper {
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .cote-wrapper {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .cote-colonne {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .cote-entete {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--md-divider);
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--md-primary);
+    background: var(--md-surface);
+  }
+
+  .cote-entete .material-icons { font-size: 18px; }
+
+  .cote-viewer {
+    /* Le viewer Mirador s'insère ici en mode côte à côte */
+  }
+
+  /* Transcription scrollable en mode côte à côte */
+  .cote-transcription-scroll {
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  /* ── Transcription (partagée) ── */
   .transcription-conteneur { padding: 24px; }
 
   .transcription-nav {
@@ -237,7 +458,8 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
     border-bottom: 1px solid var(--md-divider);
   }
 
-  .transcription-page-btn {
+  .transcription-page-btn,
+  .transcription-page-btn-cote {
     padding: 4px 12px;
     border-radius: 16px;
     border: 1px solid var(--md-divider);
@@ -249,7 +471,9 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
   }
 
   .transcription-page-btn.actif,
-  .transcription-page-btn:hover {
+  .transcription-page-btn:hover,
+  .transcription-page-btn-cote.actif,
+  .transcription-page-btn-cote:hover {
     background: var(--md-primary);
     color: white;
     border-color: var(--md-primary);

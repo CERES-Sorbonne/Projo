@@ -1,16 +1,26 @@
 ---
 import Base from '../layouts/Base.astro'
 import MoteurFacettes from '../components/MoteurFacettes.jsx'
-import { getLivres, getColonnesMeta } from '../lib/parseData'
+import { getLivres, getColonnesMeta, getLivreAvecTranscription } from '../lib/parseData'
 
 const livres = getLivres()
 const colonnesMeta = getColonnesMeta(livres)
 
-// Sérialiser pour le composant React (client-side)
-const livresJson = JSON.stringify(livres)
+// Ajouter le texte brut des transcriptions pour la recherche plein texte
+const livresAvecTranscription = livres.map(livre => {
+  const detail = getLivreAvecTranscription(livre.id)
+  return {
+    ...livre,
+    _transcriptionTexte: detail?.transcriptionPages
+      .map(p => p.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+      .join(' ') ?? '',
+  }
+})
+
+const livresJson = JSON.stringify(livresAvecTranscription)
 const colonnesJson = JSON.stringify(colonnesMeta)
 ---
-
+<!-- reste identique -->
 <Base titre="Recherche" description="Moteur de recherche à facettes">
   <div class="conteneur">
     <div class="page-entete">

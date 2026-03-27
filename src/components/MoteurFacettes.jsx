@@ -77,10 +77,10 @@ function ExtraitTranscription({ texte, indices }) {
   const FENETRE = 80
   const premierMatch = indices[0][0]
   const dernierMatch = indices[indices.length - 1][1]
-  
+
   const start = Math.max(0, premierMatch - FENETRE)
   const end = Math.min(texte.length, dernierMatch + FENETRE)
-  
+
   const extrait = texte.slice(start, end)
   const decalage = start
 
@@ -127,7 +127,18 @@ function ExtraitTranscription({ texte, indices }) {
 
 // ─── Carte résultat ───────────────────────────────────────────────────────────
 
-function CarteResultat({ livre, colonnesMeta }) {
+function estFiltreActif(meta, livre, filtres) {
+  const filtre = filtres[meta.key]
+  if (!filtre || (Array.isArray(filtre) && filtre.length === 0)) return false
+  const valeur = String(livre[meta.key] ?? '')
+
+  if (meta.type === 'select') return Array.isArray(filtre) && filtre.includes(valeur)
+  if (meta.type === 'range') return Array.isArray(filtre) && (Number(valeur) >= filtre[0] && Number(valeur) <= filtre[1])
+  if (meta.type === 'text') return !!filtre && valeur.toLowerCase().includes(String(filtre).toLowerCase())
+  return false
+}
+
+function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
   const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
   const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', '_transcriptionTexte', '_indicesMatch'])
   const metaSupp = colonnesMeta.filter(m => !RESERVEES.has(m.key))
@@ -146,12 +157,12 @@ function CarteResultat({ livre, colonnesMeta }) {
         <p className="carte-resultat-auteur">{auteurs}</p>
         <div className="carte-resultat-chips">
           {metaSupp.map(m => (
-            <span key={m.key} className="chip">
+            <span key={m.key} className={`chip${estFiltreActif(m, livre, filtresActifs) ? ' chip--actif' : ''}`}>
               <strong>{m.label}</strong>&nbsp;{String(livre[m.key] ?? '')}
             </span>
           ))}
           {indicesMatch && (
-            <span className="chip chip--transcription">
+            <span className="chip chip--actif">
               <span className="material-icons" style={{ fontSize: '13px' }}>history_edu</span>
               Trouvé dans la transcription
             </span>
@@ -176,20 +187,6 @@ export default function MoteurFacettes({ livres, colonnesMeta }) {
   const [recherche, setRecherche] = useState('')
   const [filtres, setFiltres] = useState({})
 
-  // Initialisation de MiniSearch
-  const miniSearch = useMemo(() => {
-    const ms = new MiniSearch({
-      fields: ['titre', 'sous_titre', 'auteur', '_transcriptionTexte'], // Champs à chercher
-      storeFields: ['id', 'titre', 'sous_titre', 'auteur', '_transcriptionTexte'], // Champs à retourner
-      searchOptions: {
-        fuzzy: 0.2,
-        prefix: true,
-        combineWith: 'AND' // Pour que "Comme celui" cherche les deux mots
-      }
-    })
-    ms.addAll(livres)
-    return ms
-  }, [livres])
 
   const majFiltres = (key, valeur) => {
     setFiltres(prev => ({ ...prev, [key]: valeur }))
@@ -200,47 +197,77 @@ export default function MoteurFacettes({ livres, colonnesMeta }) {
     setFiltres({})
   }
 
-const resultats = useMemo(() => {
-  if (!recherche.trim()) return livres.map(l => ({ ...l, _indicesMatch: null }))
+  const resultats = useMemo(() => {
+    // 1. Appliquer les filtres facettes sur tous les livres
+    const livresFiltres = livres.filter(livre => {
+      return colonnesMeta.every(meta => {
+        const filtre = filtres[meta.key]
+        if (filtre === null || filtre === undefined) return true
 
-  const msResultats = miniSearch.search(recherche)
-  const termesRecherche = recherche.toLowerCase().trim().split(/\s+/)
+        const valeur = String(livre[meta.key] ?? '')
 
-  return msResultats.map(r => {
-    if (!r._transcriptionTexte) return null
-    const texteLow = r._transcriptionTexte.toLowerCase()
-    let indicesMatch = []
+        if (meta.type === 'select') {
+          if (!Array.isArray(filtre) || filtre.length === 0) return true
+          return filtre.includes(valeur)
+        }
+        if (meta.type === 'range') {
+          if (!Array.isArray(filtre)) return true
+          const nb = Number(valeur)
+          return nb >= filtre[0] && nb <= filtre[1]
+        }
+        if (meta.type === 'text') {
+          if (!filtre) return true
+          return valeur.toLowerCase().includes(String(filtre).toLowerCase())
+        }
+        return true
+      })
+    })
 
-    // CONSTRUCTION DE LA REGEX DYNAMIQUE
-    // \b force le début d'un mot (évite "recommandé")
-    // [a-z]{0,2} permet une petite variation à la fin (fuzzy)
-    const pattern = termesRecherche
-      .map(t => `\\b${t.slice(0, -1)}[a-z]{1,2}`) 
-      .join('\\s+')
+    // 2. Si pas de recherche texte, retourner les livres filtrés
+    if (!recherche.trim()) return livresFiltres.map(l => ({ ...l, _indicesMatch: null }))
 
-    try {
-      const regex = new RegExp(pattern, 'gi')
-      let match
-      while ((match = regex.exec(r._transcriptionTexte)) !== null) {
-        indicesMatch.push([match.index, match.index + match[0].length - 1])
+    // 3. MiniSearch uniquement sur les livres déjà filtrés
+    const miniSearchLocal = new MiniSearch({
+      fields: ['titre', 'sous_titre', 'auteur', '_transcriptionTexte'],
+      storeFields: ['id', 'titre', 'sous_titre', 'auteur', '_transcriptionTexte'],
+      searchOptions: { fuzzy: 0.2, prefix: true, combineWith: 'AND' }
+    })
+    miniSearchLocal.addAll(livresFiltres)
+
+    const msResultats = miniSearchLocal.search(recherche)
+    const termesRecherche = recherche.toLowerCase().trim().split(/\s+/)
+
+    return msResultats.map(r => {
+      const livreOriginal = livresFiltres.find(l => l.id === r.id)
+      if (!livreOriginal) return null
+
+      if (!r._transcriptionTexte) return { ...livreOriginal, _indicesMatch: null }
+
+      const pattern = termesRecherche
+        .map(t => `\\b${t.slice(0, -1)}[a-z]{1,2}`)
+        .join('\\s+')
+
+      let indicesMatch = []
+      try {
+        const regex = new RegExp(pattern, 'gi')
+        let match
+        while ((match = regex.exec(r._transcriptionTexte)) !== null) {
+          indicesMatch.push([match.index, match.index + match[0].length - 1])
+        }
+      } catch (e) { return null }
+
+      if (indicesMatch.length > 0) {
+        return { ...livreOriginal, _indicesMatch: indicesMatch }
       }
-    } catch (e) { return null }
 
-    // Si on a trouvé des occurrences de la phrase/mot précis
-    if (indicesMatch.length > 0) {
-      return { ...r, _indicesMatch: indicesMatch }
-    }
+      const matchHorsTranscription = Object.keys(r.match).some(k => k !== '_transcriptionTexte')
+      if (matchHorsTranscription) {
+        return { ...livreOriginal, _indicesMatch: null }
+      }
 
-    // Si MiniSearch a trouvé le livre via le titre ou l'auteur (pas la transcription)
-    // on le garde mais sans surlignage de transcription
-    const matchHorsTranscription = Object.keys(r.match).some(k => k !== '_transcriptionTexte')
-    if (matchHorsTranscription) {
-       return { ...r, _indicesMatch: null }
-    }
-
-    return null // Sinon, on dégage le faux positif
-  }).filter(Boolean)
-}, [recherche, filtres, livres, miniSearch, colonnesMeta])
+      return null
+    }).filter(Boolean)
+  }, [recherche, filtres, livres, colonnesMeta])
 
   const nbFiltresActifs = Object.values(filtres).filter(v =>
     v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)
@@ -299,7 +326,7 @@ const resultats = useMemo(() => {
           ) : (
             <div className="resultats-liste">
               {resultats.map(livre => (
-                <CarteResultat key={livre.id} livre={livre} colonnesMeta={colonnesMeta} />
+                <CarteResultat key={livre.id} livre={livre} colonnesMeta={colonnesMeta} filtresActifs={filtres} />
               ))}
             </div>
           )}
@@ -341,11 +368,19 @@ const resultats = useMemo(() => {
         .carte-resultat-sous-titre { font-size: 0.875rem; color: var(--md-on-surface-medium); font-style: italic; margin-bottom: 2px; }
         .carte-resultat-auteur { font-size: 0.875rem; color: var(--md-on-surface-medium); margin-bottom: 8px; }
         .carte-resultat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .chip--actif {
+          background: var(--md-primary);
+          color: var(--md-on-primary);
+          font-weight: 600;
+        }
+        .chip--actif strong {
+          color: rgba(255, 255, 255, 0.75);
+          font-weight: 400;
+        }
         .carte-resultat-fleche { color: #bdbdbd; flex-shrink: 0; }
         .resultats-vide { padding: 64px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 16px; color: var(--md-on-surface-medium); }
         .resultats-vide .material-icons { font-size: 48px; opacity: 0.4; }
         .carte-resultat--transcription { border-left: 3px solid #1a237e; }
-        .chip--transcription { background: #e8eaf6; color: #1a237e; display: inline-flex; align-items: center; gap: 4px; }
         .extrait-transcription { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 10px 12px; background: #f5f5f5; border-radius: 4px; border-left: 3px solid #c5cae9; }
         .extrait-icone { font-size: 16px !important; color: #9fa8da; flex-shrink: 0; margin-top: 2px; }
         .extrait-texte { font-family: 'Crimson Pro', Georgia, serif; font-size: 0.9rem; line-height: 1.6; color: #424242; margin: 0; }

@@ -2,8 +2,8 @@ id,Originale,Langues,"Manuscrit /
 imprimé ","Gothique /
 romain","Prose
 vers","Auteur
-déclaré",auteur,"Fonction
-déclarée","Type
+déclaré",auteur,"text__Fonction
+déclarée","select__Type
 auteur",Fait,"Changement
 titre",Titre générique,titre,Lieu,Pays,"Lieu
 fictif",Editeur,"Editeur
@@ -19,5 +19,7 @@ mœurs","Rire de la
 religion","Rire des
 protestants",Bibliothèque,Cote,Numérisation,Traduction,"Autres
 Bibliothèques",manifeste_url
-Livre-01,oui,Fr,imprimé,Gothique,prose,Julien Macho,Julien Macho,frère augustin docteur en théologie,Auteur,,,Fables d'Ésope,"Les Subtiles fables d'Esope, traduites par Julien Macho, Augustin et suivies de fables d'Avien, d'Alphonse et de Pogge",Lyon,France,,Nicolaus Philippi et Marcus Reinhart,,,1480,1480,,folio,non,,,,,,292,Nouvelles / fables / ,,,,,BM Tours,,,,,http://localhost:4321/manifestes/10.34847-nkl.5be8vpp2.json
-Livre-02,non,En,imprimé,Gothique,prose,Julien Macho2,Julien Macho2,frère augustin docteur en théologie,Auteur,,,Fables d'Ésope,"Les Subtiles fables d'Esope, traduites par Julien Macho2, Augustin et suivies de fables d'Avien, d'Alphonse et de Pogge",Lyon,France,,Nicolaus Philippi et Marcus Reinhart,,,1450,1980,,folio,non,,,,,,292,Nouvelles / fables / ,,,,,BM Tours,,,,,http://localhost:4321/manifestes/10.34847-nkl.5be8vpp2.json
+Livre-01,oui,Fr,imprimé,Gothique,prose,Julien Macho,Julien Macho,frère augustin docteur en théologie,Jambon,,,Fables d'Ésope,"Les Subtiles fables d'Esope, traduites par Julien Macho, Augustin et suivies de fables d'Avien, d'Alphonse et de Pogge",Lyon,France,,Nicolaus Philippi et Marcus Reinhart,,,1480,1480,,folio,non,,,,,,292,Nouvelles / fables / ,,,,,BM Tours,,,,,http://localhost:4321/manifestes/10.34847-nkl.5be8vpp2.json
+Livre-02,non,En,imprimé,Gothique,prose,Julien Macho2,Julien Macho2,frère martin docteur en théologie,Auteur,,,Fables d'Ésope,"Les Subtiles fables d'Esope, traduites par Julien Macho2, Augustin et suivies de fables d'Avien, d'Alphonse et de Pogge",Lyon,France,,Nicolaus Philippi et Marcus Reinhart,,,1450,1980,,folio,non,,,,,,292,Nouvelles / fables / ,,,,,BM Tours,,,,,http://localhost:4321/manifestes/10.34847-nkl.5be8vpp2.json
+Livre-03,non,En,imprimé,Gothique,rime,Julien Macho2,Julien Macho3,frère augustin docteur en théologie,Auteur,,,Fables d'Ésope,"Les Grotesques fables d'Esope, traduites par Julien Macho3, Augustin et suivies de fables d'Avien, d'Alphonse et de Pogge",Lyon,France,,Nicolaus Philippi et Marcus Reinhart,,,1320,1720,,folio,oui,,,,,,292,Nouvelles / fables / ,,,,,BM Tours,,,,,http://localhost:4321/manifestes/10.34847-nkl.5be8vpp2.json
+Livre-04,non,En,imprimé,Gothique,rime,Julien Macho2,Julien Macho4,frère daniel docteur en théologie,Jambon,,,Fables d'Ésope 3,"Les Grotesques fables d'Esope, traduites par Julien Macho3, Augustin et suivies de fables d'Avien, d'Alphonse et de Pogge",Lyon,France,,Nicolaus Philippi et Marcus Reinhart,,,1320,1720,,folio,oui,,,,,,292,Nouvelles / fables / ,,,,,BM Autres,,,,,http://localhost:4321/manifestes/10.34847-nkl.5be8vpp2.json

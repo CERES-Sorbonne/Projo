@@ -112,7 +112,7 @@ function detecterTypeColonne(key: string, valeurs: string[]): ColonneType {
 
   // Peu de valeurs uniques (< 20) → select
   const uniques = new Set(valeursNonVides)
-  if (uniques.size <= 20 && uniques.size < valeursNonVides.length * 0.5) {
+  if (uniques.size <= 10) {
     return 'select'
   }
 

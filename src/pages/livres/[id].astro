@@ -19,7 +19,6 @@ if (!livre) {
 
 const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
 
-// Colonnes supplémentaires à afficher dans les métadonnées
 const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages'])
 const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 ---
@@ -28,60 +27,54 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
   <!-- En-tête du livre -->
   <div class="livre-entete">
     <div class="conteneur">
-      <div class="livre-entete-contenu">
-        <div>
-          <div class="fil-ariane">
-            <a href="/">Accueil</a>
-            <span class="material-icons" style="font-size:16px;opacity:0.5">chevron_right</span>
-            <span>Collection</span>
-            <span class="material-icons" style="font-size:16px;opacity:0.5">chevron_right</span>
-            <span>{livre.titre}</span>
-          </div>
-          <h1 class="livre-titre">{livre.titre}</h1>
-          {livre.sous_titre && <p class="livre-sous-titre">{livre.sous_titre as string}</p>}
-          <p class="livre-auteur">{auteurs}</p>
-          <div class="livre-chips">
-            {metaSupp.map(([cle, val]) => (
-              <span class="chip">
-                <strong>{cle.replace(/_/g, ' ')}</strong>&nbsp;{String(val)}
-              </span>
-            ))}
-          </div>
-        </div>
+      <div class="fil-ariane">
+        <a href="/">Accueil</a>
+        <span class="material-icons" style="font-size:16px;opacity:0.5">chevron_right</span>
+        <span>Collection</span>
+        <span class="material-icons" style="font-size:16px;opacity:0.5">chevron_right</span>
+        <span>{livre.titre}</span>
+      </div>
+      <h1 class="livre-titre">{livre.titre}</h1>
+      {livre.sous_titre && <p class="livre-sous-titre">{livre.sous_titre as string}</p>}
+      <p class="livre-auteur">{auteurs}</p>
+      <div class="livre-chips">
+        {metaSupp.map(([cle, val]) => (
+          <span class="chip">
+            <strong>{cle.replace(/_/g, ' ')}</strong>&nbsp;{String(val)}
+          </span>
+        ))}
       </div>
     </div>
   </div>
 
   <!-- Corps principal -->
   <div class="conteneur">
-    <!-- Barre de contrôle du mode d'affichage -->
+    <!-- Barre de sélection du mode -->
     <div class="mode-barre">
       <div class="mode-boutons" role="group" aria-label="Mode d'affichage">
-        <button
-          id="btn-mode-onglets"
-          class="mode-btn actif"
-          onclick="setMode('onglets')"
-          title="Afficher en onglets"
-        >
+        <button id="btn-mode-onglets" class="mode-btn actif" onclick="setMode('onglets')" title="Afficher en onglets">
           <span class="material-icons">tab</span>
           Onglets
         </button>
-        <button
-          id="btn-mode-cote"
-          class="mode-btn"
-          onclick="setMode('cote')"
-          title="Afficher côte à côte"
-        >
+        <button id="btn-mode-cote" class="mode-btn" onclick="setMode('cote')" title="Afficher côte à côte">
           <span class="material-icons">view_column</span>
           Côte à côte
         </button>
       </div>
     </div>
 
-    <!-- Wrapper principal — change de classe selon le mode -->
+    <!--
+      Le viewer Mirador est instancié UNE SEULE FOIS ici dans un conteneur
+      hors-flux. setMode() le déplace (appendChild) dans le slot cible sans
+      le démonter, évitant ainsi une réinitialisation de Mirador à chaque bascule.
+    -->
+    <div id="viewer-anchor" style="display:none">
+      <MiradorViewer manifestUrl={livre.manifeste_url} client:only="react" />
+    </div>
+
     <div id="livre-corps" class="livre-corps mode-onglets">
 
-      <!-- ── MODE ONGLETS : viewer + transcription dans la même carte avec onglets ── -->
+      <!-- ── MODE ONGLETS ── -->
       <section id="section-onglets" class="viewer-section carte">
         <div class="section-onglets-nav">
           <button class="onglet actif" id="btn-viewer" onclick="afficherPanel('viewer')">
@@ -95,10 +88,7 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
         </div>
 
         <div id="panel-viewer" class="panel actif">
-          <MiradorViewer
-            manifestUrl={livre.manifeste_url}
-            client:only="react"
-          />
+          <div id="viewer-slot-onglets" class="viewer-slot"></div>
         </div>
 
         <div id="panel-transcription" class="panel">
@@ -107,21 +97,14 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
               {livre.transcriptionPages.length > 1 && (
                 <div class="transcription-nav">
                   {livre.transcriptionPages.map((page, i) => (
-                    <button
-                      class="transcription-page-btn"
-                      onclick={`afficherPage(${i})`}
-                      id={`btn-page-${i}`}
-                    >
+                    <button class="transcription-page-btn" onclick={`afficherPage(${i})`} id={`btn-page-${i}`}>
                       p. {page.n}
                     </button>
                   ))}
                 </div>
               )}
               {livre.transcriptionPages.map((page, i) => (
-                <div
-                  id={`page-${i}`}
-                  class={`transcription-page ${i === 0 ? 'active' : ''}`}
-                >
+                <div id={`page-${i}`} class={`transcription-page ${i === 0 ? 'active' : ''}`}>
                   <div class="transcription-page-entete">
                     <span class="chip">
                       <span class="material-icons" style="font-size:14px">description</span>
@@ -141,20 +124,17 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
         </div>
       </section>
 
-      <!-- ── MODE CÔTE À CÔTE : deux colonnes indépendantes ── -->
+      <!-- ── MODE CÔTE À CÔTE ── -->
       <div id="section-cote" class="cote-wrapper">
-        <!-- Colonne viewer -->
+
         <section class="cote-colonne carte">
           <div class="cote-entete">
             <span class="material-icons">image</span>
             Pages numérisées
           </div>
-          <div class="cote-viewer">
-            <!-- Le viewer Mirador est partagé : on le déplace via JS selon le mode -->
-          </div>
+          <div id="viewer-slot-cote" class="viewer-slot"></div>
         </section>
 
-        <!-- Colonne transcription -->
         <section class="cote-colonne carte">
           <div class="cote-entete">
             <span class="material-icons">subject</span>
@@ -165,21 +145,14 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
               {livre.transcriptionPages.length > 1 && (
                 <div class="transcription-nav">
                   {livre.transcriptionPages.map((page, i) => (
-                    <button
-                      class="transcription-page-btn-cote"
-                      onclick={`afficherPageCote(${i})`}
-                      id={`btn-page-cote-${i}`}
-                    >
+                    <button class="transcription-page-btn-cote" onclick={`afficherPageCote(${i})`} id={`btn-page-cote-${i}`}>
                       p. {page.n}
                     </button>
                   ))}
                 </div>
               )}
               {livre.transcriptionPages.map((page, i) => (
-                <div
-                  id={`page-cote-${i}`}
-                  class={`transcription-page ${i === 0 ? 'active' : ''}`}
-                >
+                <div id={`page-cote-${i}`} class={`transcription-page ${i === 0 ? 'active' : ''}`}>
                   <div class="transcription-page-entete">
                     <span class="chip">
                       <span class="material-icons" style="font-size:14px">description</span>
@@ -197,15 +170,29 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
             </div>
           )}
         </section>
-      </div>
 
+      </div>
     </div><!-- fin #livre-corps -->
   </div>
 </Base>
 
 <script>
-  // ── Gestion des onglets (mode onglets) ──────────────────────────────────────
+  // ── Déplace le viewer dans un slot cible sans le démonter ───────────────────
+  function placerViewer(slotId: string) {
+    const anchor = document.getElementById('viewer-anchor')
+    const slot   = document.getElementById(slotId)
+    if (!anchor || !slot) return
+    while (anchor.firstChild) slot.appendChild(anchor.firstChild)
+  }
 
+  function retirerViewer(slotId: string) {
+    const anchor = document.getElementById('viewer-anchor')
+    const slot   = document.getElementById(slotId)
+    if (!anchor || !slot) return
+    while (slot.firstChild) anchor.appendChild(slot.firstChild)
+  }
+
+  // ── Onglets ──────────────────────────────────────────────────────────────────
   function afficherPanel(nom: string) {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('actif'))
     document.querySelectorAll('.onglet').forEach(b => b.classList.remove('actif'))
@@ -214,61 +201,54 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
   }
 
   function afficherPage(index: number) {
-    document.querySelectorAll('.transcription-page').forEach((p, i) => {
-      p.classList.toggle('active', i === index)
-    })
-    document.querySelectorAll('.transcription-page-btn').forEach((b, i) => {
-      b.classList.toggle('actif', i === index)
-    })
+    document.querySelectorAll('.transcription-page').forEach((p, i) => p.classList.toggle('active', i === index))
+    document.querySelectorAll('.transcription-page-btn').forEach((b, i) => b.classList.toggle('actif', i === index))
   }
 
   function afficherPageCote(index: number) {
-    document.querySelectorAll('[id^="page-cote-"]').forEach((p, i) => {
-      p.classList.toggle('active', i === index)
-    })
-    document.querySelectorAll('.transcription-page-btn-cote').forEach((b, i) => {
-      b.classList.toggle('actif', i === index)
-    })
+    document.querySelectorAll('[id^="page-cote-"]').forEach((p, i) => p.classList.toggle('active', i === index))
+    document.querySelectorAll('.transcription-page-btn-cote').forEach((b, i) => b.classList.toggle('actif', i === index))
   }
 
-  // ── Gestion du mode d'affichage ─────────────────────────────────────────────
-
+  // ── Mode d'affichage ─────────────────────────────────────────────────────────
   function setMode(mode: 'onglets' | 'cote') {
-    const corps = document.getElementById('livre-corps')
+    const corps      = document.getElementById('livre-corps')
     const btnOnglets = document.getElementById('btn-mode-onglets')
-    const btnCote = document.getElementById('btn-mode-cote')
-
+    const btnCote    = document.getElementById('btn-mode-cote')
     if (!corps) return
 
     if (mode === 'onglets') {
+      retirerViewer('viewer-slot-cote')
       corps.className = 'livre-corps mode-onglets'
       btnOnglets?.classList.add('actif')
       btnCote?.classList.remove('actif')
+      placerViewer('viewer-slot-onglets')
     } else {
+      retirerViewer('viewer-slot-onglets')
       corps.className = 'livre-corps mode-cote'
       btnOnglets?.classList.remove('actif')
       btnCote?.classList.add('actif')
+      placerViewer('viewer-slot-cote')
     }
 
-    // Persister le choix dans sessionStorage
     sessionStorage.setItem('livreMode', mode)
   }
 
-  // Restaurer le mode au chargement
-  const modeSauvegarde = sessionStorage.getItem('livreMode') as 'onglets' | 'cote' | null
-  if (modeSauvegarde === 'cote') {
-    setMode('cote')
-  }
+  // ── Init : attendre que React (client:only) ait monté le viewer ──────────────
+  window.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      const modeSauvegarde = sessionStorage.getItem('livreMode') as 'onglets' | 'cote' | null
+      setMode(modeSauvegarde === 'cote' ? 'cote' : 'onglets')
+    }, 100)
+  })
 
-  // Exposer globalement
-  ;(window as any).afficherPanel = afficherPanel
-  ;(window as any).afficherPage = afficherPage
+  ;(window as any).afficherPanel    = afficherPanel
+  ;(window as any).afficherPage     = afficherPage
   ;(window as any).afficherPageCote = afficherPageCote
-  ;(window as any).setMode = setMode
+  ;(window as any).setMode          = setMode
 </script>
 
 <style>
-  /* ── En-tête du livre ── */
   .livre-entete {
     background: var(--md-surface);
     border-bottom: 1px solid var(--md-divider);
@@ -307,7 +287,6 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 
   .livre-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
-  /* ── Barre de sélection du mode ── */
   .mode-barre {
     display: flex;
     justify-content: flex-end;
@@ -341,7 +320,6 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
   }
 
   .mode-btn:last-child { border-right: none; }
-
   .mode-btn .material-icons { font-size: 18px; }
 
   .mode-btn.actif {
@@ -354,18 +332,16 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
     color: var(--md-primary);
   }
 
-  /* ── Corps du livre ── */
   .livre-corps { margin-bottom: 32px; }
 
-  /* MODE ONGLETS */
   .mode-onglets #section-onglets { display: block; }
   .mode-onglets #section-cote    { display: none; }
 
-  /* MODE CÔTE À CÔTE */
   .mode-cote #section-onglets { display: none; }
   .mode-cote #section-cote    { display: grid; }
 
-  /* ── Onglets (mode onglets) ── */
+  .viewer-slot { width: 100%; }
+
   .section-onglets-nav {
     display: flex;
     border-bottom: 1px solid var(--md-divider);
@@ -401,7 +377,6 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
   .panel { display: none; }
   .panel.actif { display: block; }
 
-  /* ── Mode côte à côte ── */
   .cote-wrapper {
     grid-template-columns: 1fr 1fr;
     gap: 16px;
@@ -409,9 +384,7 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
   }
 
   @media (max-width: 900px) {
-    .cote-wrapper {
-      grid-template-columns: 1fr;
-    }
+    .cote-wrapper { grid-template-columns: 1fr; }
   }
 
   .cote-colonne {
@@ -436,17 +409,11 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 
   .cote-entete .material-icons { font-size: 18px; }
 
-  .cote-viewer {
-    /* Le viewer Mirador s'insère ici en mode côte à côte */
-  }
-
-  /* Transcription scrollable en mode côte à côte */
   .cote-transcription-scroll {
     max-height: 70vh;
     overflow-y: auto;
   }
 
-  /* ── Transcription (partagée) ── */
   .transcription-conteneur { padding: 24px; }
 
   .transcription-nav {

@@ -9,14 +9,20 @@ const colonnesMeta = getColonnesMeta(livres)
 // Ajouter le texte brut des transcriptions pour la recherche plein texte
 const livresAvecTranscription = livres.map(livre => {
   const detail = getLivreAvecTranscription(livre.id)
+  const texteComplet = detail?.transcriptionPages
+    .map(p => p.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+    .join(' ') ?? ''
+
   return {
     ...livre,
-    _transcriptionTexte: detail?.transcriptionPages
-      .map(p => p.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
-      .join(' ') ?? '',
+    _transcriptionTexte: texteComplet,
+    // Chunks de ~200 chars pour que Fuse puisse chercher dedans
+    _transcriptionChunks: texteComplet
+      .split(/[.!?;]+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 20),
   }
 })
-
 const livresJson = JSON.stringify(livresAvecTranscription)
 const colonnesJson = JSON.stringify(colonnesMeta)
 ---

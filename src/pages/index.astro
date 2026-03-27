@@ -2,16 +2,17 @@
 import Base from '../layouts/Base.astro'
 import CarteLivre from '../components/CarteLivre.astro'
 import { getLivres } from '../lib/parseData'
+import coverImage from '../assets/cover_image.png';
 
 const livres = getLivres()
 ---
 
 <Base titre="Accueil">
   <!-- Hero -->
-  <section class="hero">
+  <section class="hero" style={{ backgroundImage: `url(${coverImage.src})` }}>
     <div class="hero-contenu">
       <span class="material-icons hero-icone">auto_stories</span>
-      <h1 class="hero-titre">Bibliothèque Numérique</h1>
+      <h1 class="hero-titre">Projet Espiègle</h1>
       <p class="hero-description">
         Explorez notre collection de textes numérisés. Parcourez les pages en haute résolution,
         lisez les transcriptions annotées et recherchez dans l'ensemble du corpus.
@@ -21,7 +22,7 @@ const livres = getLivres()
           <span class="material-icons">search</span>
           Moteur de recherche
         </a>
-        <a href="#collection" class="btn btn-outlined" style="color:white;border-color:rgba(255,255,255,0.6)">
+        <a href="#collection" class="btn btn-primary">
           <span class="material-icons">library_books</span>
           Parcourir la collection
         </a>
@@ -50,8 +51,8 @@ const livres = getLivres()
 
 <style>
   .hero {
-    background: linear-gradient(135deg, var(--md-primary-dark) 0%, var(--md-primary) 60%, var(--md-primary-light) 100%);
-    color: white;
+    background-color: rgba(255, 255, 255, 0.1);
+    background-blend-mode: lighten;    color: white;
     padding: 80px 24px;
     text-align: center;
   }
@@ -63,7 +64,7 @@ const livres = getLivres()
 
   .hero-icone {
     font-size: 64px;
-    opacity: 0.9;
+    opacity: 1;
     margin-bottom: 16px;
     display: block;
   }
@@ -77,10 +78,14 @@ const livres = getLivres()
   }
 
   .hero-description {
-    font-size: 1.125rem;
+    font-size: 1.5rem;
     line-height: 1.6;
-    opacity: 0.87;
+    opacity: 1;
     margin-bottom: 32px;
+    background: var(--md-primary);
+    color: var(--md-on-primary);
+    box-shadow: var(--md-elevation-1);
+    padding: 1em
   }
 
   .hero-actions {
@@ -108,7 +113,7 @@ const livres = getLivres()
 
   .stat-label {
     font-size: 0.875rem;
-    opacity: 0.7;
+    opacity: 1;
     text-transform: uppercase;
     letter-spacing: 0.1em;
   }

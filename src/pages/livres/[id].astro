@@ -22,11 +22,10 @@ const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.au
 const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages'])
 const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 
-// Construire la liste plate de toutes les ancres (toutes pages confondues)
-// pour le panneau de navigation et la génération d'URLs directes
 const toutesAncres = livre.transcriptionPages.flatMap(p => p.ancres ?? []).filter(a => a.inPassages)
-// URL de base de la page courante (pour construire des URLs absolues partageables)
 const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `/livres/${id}`
+
+const nbPages = livre.transcriptionPages.length
 ---
 
 <Base titre={livre.titre} description={`${livre.titre} — ${auteurs}`}>
@@ -55,7 +54,6 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
 
   <!-- Corps principal -->
   <div class="conteneur">
-    <!-- Barre de sélection du mode -->
     <div class="mode-barre">
       <div class="mode-boutons" role="group" aria-label="Mode d'affichage">
         <button id="btn-mode-onglets" class="mode-btn actif" onclick="setMode('onglets')" title="Afficher en onglets">
@@ -69,7 +67,12 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
       </div>
     </div>
 
-    <!-- Viewer monté une seule fois hors flux, déplacé par setMode() -->
+    <!--
+      Le viewer React est monté ici une seule fois.
+      La synchronisation passe par des CustomEvents sur window :
+        mirador:pagechange  — Mirador → page de transcription
+        mirador:goto        — transcription → Mirador
+    -->
     <div id="viewer-anchor" style="display:none">
       <MiradorViewer manifestUrl={livre.manifeste_url} client:only="react" />
     </div>
@@ -102,26 +105,55 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
         <div id="panel-transcription" class="panel">
           {livre.transcriptionPages.length > 0 ? (
             <div class="transcription-conteneur">
-              {livre.transcriptionPages.length > 1 && (
+              {nbPages > 1 && (
                 <div class="transcription-nav">
-                  {livre.transcriptionPages.map((page, i) => (
-                    <button class="transcription-page-btn" onclick={`afficherPage(${i})`} id={`btn-page-${i}`}>
-                      p. {page.n}
-                    </button>
-                  ))}
+                  <button class="nav-page-btn" id="btn-prev-onglets" onclick="naviguerPage('onglets', -1)" disabled aria-label="Page précédente">
+                    <span class="material-icons">chevron_left</span>
+                    Précédent
+                  </button>
+                  <div class="nav-select-wrap">
+                    <label for="select-page-onglets" class="nav-select-label">
+                      <span class="material-icons">description</span>
+                    </label>
+                    <select id="select-page-onglets" class="nav-select" onchange="allerPageSelect('onglets', this.value)" aria-label="Aller à la page">
+                      {livre.transcriptionPages.map((page, i) => (
+                        <option value={i}>Page {page.n}</option>
+                      ))}
+                    </select>
+                    <span class="nav-total">/ {nbPages}</span>
+                  </div>
+                  <button class="nav-page-btn" id="btn-next-onglets" onclick="naviguerPage('onglets', +1)" aria-label="Page suivante">
+                    Suivant
+                    <span class="material-icons">chevron_right</span>
+                  </button>
                 </div>
               )}
-              {livre.transcriptionPages.map((page, i) => (
-                <div id={`page-${i}`} class={`transcription-page ${i === 0 ? 'active' : ''}`}>
-                  <div class="transcription-page-entete">
-                    <span class="chip">
-                      <span class="material-icons" style="font-size:14px">description</span>
-                      Page {page.n}
-                    </span>
+              <div class="transcription-scroll">
+                {livre.transcriptionPages.map((page, i) => (
+                  <div id={`page-${i}`} class={`transcription-page ${i === 0 ? 'active' : ''}`}>
+                    <div class="transcription-page-entete">
+                      <span class="chip">
+                        <span class="material-icons" style="font-size:14px">description</span>
+                        Page {page.n}
+                      </span>
+                    </div>
+                    <div class="transcription-texte" set:html={page.html} />
                   </div>
-                  <div class="transcription-texte" set:html={page.html} />
+                ))}
+              </div>
+              {nbPages > 1 && (
+                <div class="transcription-nav-bas">
+                  <button class="nav-page-btn" id="btn-bas-prev-onglets" onclick="naviguerPage('onglets', -1)" aria-label="Page précédente">
+                    <span class="material-icons">chevron_left</span>
+                    Précédent
+                  </button>
+                  <span class="nav-bas-info" id="nav-bas-info-onglets">Page 1 / {nbPages}</span>
+                  <button class="nav-page-btn" id="btn-bas-next-onglets" onclick="naviguerPage('onglets', +1)" aria-label="Page suivante">
+                    Suivant
+                    <span class="material-icons">chevron_right</span>
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
           ) : (
             <div class="transcription-vide">
@@ -131,7 +163,6 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
           )}
         </div>
 
-        <!-- ── Panneau Passages (ancres navigables) ── -->
         {toutesAncres.length > 0 && (
           <div id="panel-passages" class="panel">
             <div class="passages-conteneur">
@@ -144,18 +175,10 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
                 {toutesAncres.map(ancre => (
                   <div class="passage-item">
                     <span class="passage-page chip">p. {ancre.pageN}</span>
-                    <a
-                      class="passage-lien"
-                      href={`#${ancre.id}`}
-                      onclick={`allerAuPassage('${ancre.id}'); return false;`}
-                    >
+                    <a class="passage-lien" href={`#${ancre.id}`} onclick={`allerAuPassage('${ancre.id}'); return false;`}>
                       {ancre.label || '—'}
                     </a>
-                    <button
-                      class="passage-copier"
-                      onclick={`copierUrl('${baseUrl}#${ancre.id}', this)`}
-                      title="Copier le lien direct"
-                    >
+                    <button class="passage-copier" onclick={`copierUrl('${baseUrl}#${ancre.id}', this)`} title="Copier le lien direct">
                       <span class="material-icons">content_copy</span>
                     </button>
                   </div>
@@ -173,37 +196,73 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
           <div class="cote-entete">
             <span class="material-icons">image</span>
             Pages numérisées
+            {nbPages > 1 && (
+              <span class="cote-sync-badge">
+                <span class="material-icons" style="font-size:14px">sync</span>
+                Synchronisé
+              </span>
+            )}
           </div>
           <div id="viewer-slot-cote" class="viewer-slot"></div>
         </section>
 
-        <section class="cote-colonne carte">
+        <section class="cote-colonne cote-transcription-colonne carte">
           <div class="cote-entete">
             <span class="material-icons">subject</span>
             Transcription
           </div>
+
           {livre.transcriptionPages.length > 0 ? (
-            <div class="transcription-conteneur cote-transcription-scroll">
-              {livre.transcriptionPages.length > 1 && (
+            <div class="transcription-conteneur transcription-conteneur--fixe">
+              {nbPages > 1 && (
                 <div class="transcription-nav">
-                  {livre.transcriptionPages.map((page, i) => (
-                    <button class="transcription-page-btn-cote" onclick={`afficherPageCote(${i})`} id={`btn-page-cote-${i}`}>
-                      p. {page.n}
-                    </button>
-                  ))}
+                  <button class="nav-page-btn" id="btn-prev-cote" onclick="naviguerPage('cote', -1)" disabled aria-label="Page précédente">
+                    <span class="material-icons">chevron_left</span>
+                    Précédent
+                  </button>
+                  <div class="nav-select-wrap">
+                    <label for="select-page-cote" class="nav-select-label">
+                      <span class="material-icons">description</span>
+                    </label>
+                    <select id="select-page-cote" class="nav-select" onchange="allerPageSelect('cote', this.value)" aria-label="Aller à la page">
+                      {livre.transcriptionPages.map((page, i) => (
+                        <option value={i}>Page {page.n}</option>
+                      ))}
+                    </select>
+                    <span class="nav-total">/ {nbPages}</span>
+                  </div>
+                  <button class="nav-page-btn" id="btn-next-cote" onclick="naviguerPage('cote', +1)" aria-label="Page suivante">
+                    Suivant
+                    <span class="material-icons">chevron_right</span>
+                  </button>
                 </div>
               )}
-              {livre.transcriptionPages.map((page, i) => (
-                <div id={`page-cote-${i}`} class={`transcription-page ${i === 0 ? 'active' : ''}`}>
-                  <div class="transcription-page-entete">
-                    <span class="chip">
-                      <span class="material-icons" style="font-size:14px">description</span>
-                      Page {page.n}
-                    </span>
+              <div class="transcription-scroll">
+                {livre.transcriptionPages.map((page, i) => (
+                  <div id={`page-cote-${i}`} class={`transcription-page ${i === 0 ? 'active' : ''}`}>
+                    <div class="transcription-page-entete">
+                      <span class="chip">
+                        <span class="material-icons" style="font-size:14px">description</span>
+                        Page {page.n}
+                      </span>
+                    </div>
+                    <div class="transcription-texte" set:html={page.html} />
                   </div>
-                  <div class="transcription-texte" set:html={page.html} />
+                ))}
+              </div>
+              {nbPages > 1 && (
+                <div class="transcription-nav-bas">
+                  <button class="nav-page-btn" id="btn-bas-prev-cote" onclick="naviguerPage('cote', -1)" aria-label="Page précédente">
+                    <span class="material-icons">chevron_left</span>
+                    Précédent
+                  </button>
+                  <span class="nav-bas-info" id="nav-bas-info-cote">Page 1 / {nbPages}</span>
+                  <button class="nav-page-btn" id="btn-bas-next-cote" onclick="naviguerPage('cote', +1)" aria-label="Page suivante">
+                    Suivant
+                    <span class="material-icons">chevron_right</span>
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
           ) : (
             <div class="transcription-vide">
@@ -218,16 +277,19 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
   </div>
 </Base>
 
-<script>
-  // ── Déplace le viewer dans un slot cible sans le démonter ───────────────────
-  function placerViewer(slotId: string) {
+<script define:vars={{ nbPages }}>
+  // ── État ────────────────────────────────────────────────────────────────────
+  const etat = { onglets: 0, cote: 0 }
+
+  // ── Viewer : déplacement sans démontage ─────────────────────────────────────
+  function placerViewer(slotId) {
     const anchor = document.getElementById('viewer-anchor')
     const slot   = document.getElementById(slotId)
     if (!anchor || !slot) return
     while (anchor.firstChild) slot.appendChild(anchor.firstChild)
   }
 
-  function retirerViewer(slotId: string) {
+  function retirerViewer(slotId) {
     const anchor = document.getElementById('viewer-anchor')
     const slot   = document.getElementById(slotId)
     if (!anchor || !slot) return
@@ -235,40 +297,97 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
   }
 
   // ── Onglets ──────────────────────────────────────────────────────────────────
-  function afficherPanel(nom: string) {
+  function afficherPanel(nom) {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('actif'))
     document.querySelectorAll('.onglet').forEach(b => b.classList.remove('actif'))
     document.getElementById(`panel-${nom}`)?.classList.add('actif')
     document.getElementById(`btn-${nom}`)?.classList.add('actif')
   }
 
-  function afficherPage(index: number) {
-    document.querySelectorAll('.transcription-page').forEach((p, i) => p.classList.toggle('active', i === index))
-    document.querySelectorAll('.transcription-page-btn').forEach((b, i) => b.classList.toggle('actif', i === index))
+  // ── Affichage d'une page ──────────────────────────────────────────────────────
+  function afficherPage(mode, index) {
+    const prefix = mode === 'onglets' ? 'page-' : 'page-cote-'
+    const total  = nbPages
+
+    index = Math.max(0, Math.min(index, total - 1))
+    etat[mode] = index
+
+    // Pages visibles
+    document.querySelectorAll(`[id^="${prefix}"]`).forEach((p, i) =>
+      p.classList.toggle('active', i === index)
+    )
+
+    // Select
+    const sel = document.getElementById(`select-page-${mode}`)
+    if (sel) sel.value = String(index)
+
+    // Boutons haut
+    const btnPrev = document.getElementById(`btn-prev-${mode}`)
+    const btnNext = document.getElementById(`btn-next-${mode}`)
+    if (btnPrev) btnPrev.disabled = index === 0
+    if (btnNext) btnNext.disabled = index === total - 1
+
+    // Boutons bas
+    const btnBasPrev = document.getElementById(`btn-bas-prev-${mode}`)
+    const btnBasNext = document.getElementById(`btn-bas-next-${mode}`)
+    if (btnBasPrev) btnBasPrev.classList.toggle('invisible', index === 0)
+    if (btnBasNext) btnBasNext.classList.toggle('invisible', index === total - 1)
+
+    // Compteur bas
+    const info = document.getElementById(`nav-bas-info-${mode}`)
+    if (info) info.textContent = `Page ${index + 1} / ${total}`
+
+    // Scroll haut de la zone texte
+    const scroll = document.querySelector(
+      mode === 'onglets'
+        ? '#panel-transcription .transcription-scroll'
+        : '#section-cote .transcription-scroll'
+    )
+    if (scroll) scroll.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  function afficherPageCote(index: number) {
-    document.querySelectorAll('[id^="page-cote-"]').forEach((p, i) => p.classList.toggle('active', i === index))
-    document.querySelectorAll('.transcription-page-btn-cote').forEach((b, i) => b.classList.toggle('actif', i === index))
+  function naviguerPage(mode, delta) {
+    afficherPage(mode, etat[mode] + delta)
+    if (mode === 'cote') envoyerPageAMirador(etat.cote)
   }
+
+  function allerPageSelect(mode, valeur) {
+    afficherPage(mode, parseInt(valeur, 10))
+    if (mode === 'cote') envoyerPageAMirador(etat.cote)
+  }
+
+  // ── Synchronisation Mirador ↔ transcription ──────────────────────────────────
+  //
+  // Communication avec le composant React via CustomEvents :
+  //   'mirador:pagechange'  { detail: { index } }  — Mirador → ici
+  //   'mirador:goto'        { detail: { index } }  — ici → Mirador
+
+  function envoyerPageAMirador(index) {
+    window.dispatchEvent(new CustomEvent('mirador:goto', { detail: { index } }))
+  }
+
+  // Réception des changements de canvas depuis Mirador
+  window.addEventListener('mirador:pagechange', (e) => {
+    // Synchro uniquement en mode côte-à-côte
+    const corps = document.getElementById('livre-corps')
+    if (!corps?.className.includes('mode-cote')) return
+    const index = e.detail?.index ?? 0
+    if (index !== etat.cote) afficherPage('cote', index)
+  })
 
   // ── Navigation vers un passage (ancre) ───────────────────────────────────────
-  // Bascule sur l'onglet transcription, affiche la bonne page, scrolle jusqu'à l'élément.
-  function allerAuPassage(ancreId: string) {
+  function allerAuPassage(ancreId) {
     const el = document.getElementById(ancreId)
     if (!el) return
 
-    // Trouver la page parente
-    const pagePanelOnglets = el.closest('[id^="page-"]') as HTMLElement | null
+    const pagePanelOnglets = el.closest('[id^="page-"]')
     if (pagePanelOnglets) {
       const pageIndex = parseInt(pagePanelOnglets.id.replace('page-', ''), 10)
-      if (!isNaN(pageIndex)) afficherPage(pageIndex)
+      if (!isNaN(pageIndex)) afficherPage('onglets', pageIndex)
     }
 
-    // Basculer sur l'onglet transcription
     afficherPanel('transcription')
 
-    // Scroll avec un léger délai pour laisser le DOM s'afficher
     setTimeout(() => {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       el.classList.add('transcription-ancre-cible')
@@ -276,8 +395,7 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
     }, 80)
   }
 
-  // ── Copier l'URL d'un passage ────────────────────────────────────────────────
-  function copierUrl(url: string, btn: HTMLButtonElement) {
+  function copierUrl(url, btn) {
     navigator.clipboard.writeText(url).then(() => {
       const icon = btn.querySelector('.material-icons')
       if (icon) {
@@ -288,7 +406,7 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
   }
 
   // ── Mode d'affichage ─────────────────────────────────────────────────────────
-  function setMode(mode: 'onglets' | 'cote') {
+  function setMode(mode) {
     const corps      = document.getElementById('livre-corps')
     const btnOnglets = document.getElementById('btn-mode-onglets')
     const btnCote    = document.getElementById('btn-mode-cote')
@@ -306,35 +424,37 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
       btnOnglets?.classList.remove('actif')
       btnCote?.classList.add('actif')
       placerViewer('viewer-slot-cote')
+      // Aligner Mirador sur la page de transcription courante
+      envoyerPageAMirador(etat.cote)
     }
 
     sessionStorage.setItem('livreMode', mode)
   }
 
-  // ── Gestion des ancres via l'URL (#ancre-id) ─────────────────────────────────
   function gererAncreUrl() {
     const hash = window.location.hash?.slice(1)
-    if (hash) {
-      allerAuPassage(hash)
-    }
+    if (hash) allerAuPassage(hash)
   }
 
   // ── Init ─────────────────────────────────────────────────────────────────────
   window.addEventListener('DOMContentLoaded', () => {
+    afficherPage('onglets', 0)
+    afficherPage('cote', 0)
+
     setTimeout(() => {
-      const modeSauvegarde = sessionStorage.getItem('livreMode') as 'onglets' | 'cote' | null
+      const modeSauvegarde = sessionStorage.getItem('livreMode')
       setMode(modeSauvegarde === 'cote' ? 'cote' : 'onglets')
-      // Gérer l'ancre après initialisation du mode
       setTimeout(gererAncreUrl, 200)
     }, 100)
   })
 
-  ;(window as any).afficherPanel    = afficherPanel
-  ;(window as any).afficherPage     = afficherPage
-  ;(window as any).afficherPageCote = afficherPageCote
-  ;(window as any).setMode          = setMode
-  ;(window as any).allerAuPassage   = allerAuPassage
-  ;(window as any).copierUrl        = copierUrl
+  window.afficherPanel   = afficherPanel
+  window.afficherPage    = afficherPage
+  window.naviguerPage    = naviguerPage
+  window.allerPageSelect = allerPageSelect
+  window.setMode         = setMode
+  window.allerAuPassage  = allerAuPassage
+  window.copierUrl       = copierUrl
 </script>
 
 <style>
@@ -370,7 +490,7 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
   }
 
   .livre-auteur { color: var(--md-on-surface-medium); margin-bottom: 12px; }
-  .livre-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .livre-chips  { display: flex; flex-wrap: wrap; gap: 8px; }
 
   .mode-barre {
     display: flex;
@@ -404,17 +524,17 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
     border-right: 1px solid var(--md-divider);
   }
 
-  .mode-btn:last-child { border-right: none; }
-  .mode-btn .material-icons { font-size: 18px; }
-  .mode-btn.actif { background: var(--md-primary); color: var(--md-on-primary); }
+  .mode-btn:last-child       { border-right: none; }
+  .mode-btn .material-icons  { font-size: 18px; }
+  .mode-btn.actif            { background: var(--md-primary); color: var(--md-on-primary); }
   .mode-btn:not(.actif):hover { background: rgba(26,35,126,0.06); color: var(--md-primary); }
 
   .livre-corps { margin-bottom: 32px; }
 
   .mode-onglets #section-onglets { display: block; }
   .mode-onglets #section-cote    { display: none; }
-  .mode-cote #section-onglets    { display: none; }
-  .mode-cote #section-cote       { display: grid; }
+  .mode-cote    #section-onglets { display: none; }
+  .mode-cote    #section-cote    { display: grid; }
 
   .viewer-slot { width: 100%; }
 
@@ -446,10 +566,143 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
   .onglet.actif { color: var(--md-primary); border-bottom-color: var(--md-primary); }
   .onglet:hover { color: var(--md-primary); background: rgba(26,35,126,0.04); }
 
-  .panel { display: none; }
+  .panel       { display: none; }
   .panel.actif { display: block; }
 
-  /* ── Ancres dans la transcription ── */
+  /* ── Navigation de page (barre haute) ── */
+  .transcription-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--md-surface);
+    border-bottom: 1px solid var(--md-divider);
+    flex-shrink: 0;
+  }
+
+  .nav-page-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border: 1px solid var(--md-divider);
+    border-radius: var(--radius);
+    background: none;
+    cursor: pointer;
+    font-family: var(--font-corps);
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--md-primary);
+    transition: background var(--transition), color var(--transition);
+    white-space: nowrap;
+  }
+
+  .nav-page-btn:hover:not(:disabled) { background: var(--md-primary-tint); }
+  .nav-page-btn:disabled { color: var(--md-on-surface-medium); cursor: default; opacity: 0.45; }
+
+  .nav-page-btn.invisible {
+    visibility: hidden;   /* occupe l'espace, mais invisible — boutons bas toujours alignés */
+    pointer-events: none;
+  }
+
+  .nav-page-btn .material-icons { font-size: 18px; }
+
+  .nav-select-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .nav-select-label { display: flex; align-items: center; color: var(--md-on-surface-medium); }
+  .nav-select-label .material-icons { font-size: 16px; }
+
+  .nav-select {
+    border: 1px solid var(--md-divider);
+    border-radius: var(--radius);
+    padding: 5px 8px;
+    font-family: var(--font-corps);
+    font-size: 0.875rem;
+    color: var(--md-on-surface);
+    background: var(--md-surface);
+    cursor: pointer;
+    outline: none;
+    max-width: 180px;
+    transition: border-color var(--transition);
+  }
+
+  .nav-select:focus { border-color: var(--md-primary); }
+
+  .nav-total {
+    font-size: 0.8rem;
+    color: var(--md-on-surface-medium);
+    white-space: nowrap;
+  }
+
+  /* ── Layout flex du conteneur de transcription ──────────────────────────────
+   *
+   * Structure :
+   *   .transcription-conteneur  (flex-column, hauteur fixe en mode côte-à-côte)
+   *     ├── .transcription-nav       (flex-shrink: 0 — hauteur fixe)
+   *     ├── .transcription-scroll    (flex: 1, overflow-y: auto — zone scrollable)
+   *     └── .transcription-nav-bas   (flex-shrink: 0 — hauteur fixe, toujours visible)
+   *
+   * En mode onglets, .transcription-conteneur n'a pas de hauteur fixe :
+   * le scroll est géré par la page entière.
+   * En mode côte-à-côte, --fixe impose la même hauteur que le viewer (70vh).
+   */
+  .transcription-conteneur {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .transcription-conteneur--fixe {
+    height: 70vh;
+    min-height: 500px;
+  }
+
+  .transcription-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    /* Hauteur minimale en mode onglets pour éviter un conteneur trop petit */
+    min-height: 200px;
+  }
+
+  /* ── Navigation bas (toujours visible, hors zone scrollable) ── */
+  .transcription-nav-bas {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-top: 1px solid var(--md-divider);
+    background: var(--md-surface);
+    flex-shrink: 0;
+  }
+
+  .nav-bas-info {
+    font-size: 0.8rem;
+    color: var(--md-on-surface-medium);
+  }
+
+  /* ── Badge synchro (en-tête de la colonne viewer) ── */
+  .cote-sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--md-primary);
+    background: var(--md-primary-tint);
+    border-radius: 12px;
+    padding: 2px 8px;
+    letter-spacing: 0.03em;
+    text-transform: none;
+  }
+
+  /* ── Ancres ── */
   :global(.transcription-ancre) {
     display: inline-block;
     margin-left: 0.4em;
@@ -463,18 +716,10 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
   }
 
   :global(*:hover > .transcription-ancre),
-  :global(.transcription-ancre:focus) {
-    opacity: 0.6;
-  }
+  :global(.transcription-ancre:focus) { opacity: 0.6; }
+  :global(.transcription-ancre:hover)  { opacity: 1; }
 
-  :global(.transcription-ancre:hover) {
-    opacity: 1;
-  }
-
-  /* Mise en surbrillance lors du scroll vers une ancre */
-  :global(.transcription-ancre-cible) {
-    animation: pulse-ancre 1.8s ease-out;
-  }
+  :global(.transcription-ancre-cible) { animation: pulse-ancre 1.8s ease-out; }
 
   @keyframes pulse-ancre {
     0%   { background: rgba(26, 35, 126, 0.18); outline: 2px solid rgba(26, 35, 126, 0.4); border-radius: 3px; }
@@ -494,11 +739,7 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
     line-height: 1.5;
   }
 
-  .passages-liste {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
+  .passages-liste { display: flex; flex-direction: column; gap: 6px; }
 
   .passage-item {
     display: flex;
@@ -512,12 +753,7 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
   }
 
   .passage-item:hover { background: #f5f5f5; }
-
-  .passage-page {
-    flex-shrink: 0;
-    font-size: 0.7rem;
-    padding: 2px 8px;
-  }
+  .passage-page { flex-shrink: 0; font-size: 0.7rem; padding: 2px 8px; }
 
   .passage-lien {
     flex: 1;
@@ -559,6 +795,7 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
   @media (max-width: 900px) { .cote-wrapper { grid-template-columns: 1fr; } }
 
   .cote-colonne { display: flex; flex-direction: column; overflow: hidden; }
+  .cote-transcription-colonne { display: flex; flex-direction: column; }
 
   .cote-entete {
     display: flex;
@@ -572,48 +809,16 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
     text-transform: uppercase;
     color: var(--md-primary);
     background: var(--md-surface);
+    flex-shrink: 0;
   }
 
   .cote-entete .material-icons { font-size: 18px; }
-  .cote-transcription-scroll { max-height: 70vh; overflow-y: auto; }
 
-  .transcription-conteneur { padding: 24px; }
-
-  .transcription-nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 24px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid var(--md-divider);
-  }
-
-  .transcription-page-btn,
-  .transcription-page-btn-cote {
-    padding: 4px 12px;
-    border-radius: 16px;
-    border: 1px solid var(--md-divider);
-    background: none;
-    cursor: pointer;
-    font-size: 0.8rem;
-    color: var(--md-on-surface-medium);
-    transition: all var(--transition);
-  }
-
-  .transcription-page-btn.actif,
-  .transcription-page-btn:hover,
-  .transcription-page-btn-cote.actif,
-  .transcription-page-btn-cote:hover {
-    background: var(--md-primary);
-    color: white;
-    border-color: var(--md-primary);
-  }
-
-  .transcription-page { display: none; }
+  /* ── Pages ── */
+  .transcription-page        { display: none; }
   .transcription-page.active { display: block; }
   .transcription-page-entete { margin-bottom: 16px; }
-
-  .transcription-texte { max-width: 680px; margin: 0 auto; }
+  .transcription-texte       { max-width: 680px; margin: 0 auto; }
 
   .transcription-vide {
     display: flex;
@@ -627,7 +832,7 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
 
   .transcription-vide .material-icons { font-size: 48px; opacity: 0.4; }
 
-  /* ── Styles des éléments HTR générés ── */
+  /* ── Éléments HTR ── */
   :global(.transcription-heading) {
     font-family: var(--font-texte);
     font-size: 1.15rem;
@@ -645,10 +850,7 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
     margin-bottom: 1.25rem;
   }
 
-  :global(.transcription-line) {
-    display: block;
-    line-height: 1.7;
-  }
+  :global(.transcription-line) { display: block; line-height: 1.7; }
 
   :global(.transcription-figure) {
     margin: 1rem 0;
@@ -690,5 +892,5 @@ const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `
 
   :global(.transcription-stamp::before) { content: '⊕'; margin-right: 4px; }
 
-  :global(.transcription-header) { display: none; } /* masqué par défaut */
+  :global(.transcription-header) { display: none; }
 </style>

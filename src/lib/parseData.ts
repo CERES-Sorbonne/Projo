@@ -2,11 +2,13 @@
  * parseData.ts
  * Lit le CSV des métadonnées et les XML de transcription au moment du build Astro.
  * Détecte automatiquement les types de colonnes pour générer les facettes.
+ * Détecte automatiquement le schéma XML et applique les règles de xmlRules.ts.
  */
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { XMLParser } from 'fast-xml-parser'
+import { SCHEMA_RULES, detecterSchema, type XmlRuleMap } from './xmlRules'
 
 // Chemin vers les données — configurable via variable d'environnement
 const DATA_PATH = process.env.DATA_PATH ?? path.resolve('./data')
@@ -17,11 +19,11 @@ export type ColonneType = 'range' | 'select' | 'text' | 'reserved'
 
 export interface ColonneMeta {
   key: string
-  label: string       // nom lisible (underscores → espaces, capitalisé)
+  label: string
   type: ColonneType
-  valeurs?: string[]  // pour type 'select'
-  min?: number        // pour type 'range'
-  max?: number        // pour type 'range'
+  valeurs?: string[]
+  min?: number
+  max?: number
 }
 
 export interface Livre {
@@ -30,7 +32,7 @@ export interface Livre {
   sous_titre?: string
   auteur: string | string[]
   manifeste_url: string
-  [key: string]: unknown  // colonnes libres
+  [key: string]: unknown
 }
 
 export interface LivreAvecTranscription extends Livre {
@@ -41,17 +43,23 @@ export interface LivreAvecTranscription extends Livre {
 export interface TranscriptionPage {
   n: string | number
   html: string
+  ancres: Ancre[]   // liste des ancres navigables de la page
 }
 
-// ─── Colonnes réservées (non transformées en facettes) ───────────────────────
+export interface Ancre {
+  id: string        // id HTML de l'élément
+  label: string     // texte court pour affichage (premiers mots)
+  pageN: string | number
+  inPassages?: boolean
+}
+
+// ─── Colonnes réservées ───────────────────────────────────────────────────────
 
 const COLONNES_RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url'])
 
 // ─── Lecture du CSV ──────────────────────────────────────────────────────────
 
 function parseCSV(contenu: string): Record<string, string>[] {
-  // Tokenisation complète RFC 4180 : gère guillemets, virgules et
-  // sauts de ligne à l'intérieur des cellules (fréquents dans les CSV Excel)
   function tokeniser(csv: string): string[][] {
     const lignes: string[][] = []
     let ligneCourante: string[] = []
@@ -64,7 +72,6 @@ function parseCSV(contenu: string): Record<string, string>[] {
       if (dansGuillemets) {
         if (c === '"' && suivant === '"') { cellule += '"'; i += 2 }
         else if (c === '"') { dansGuillemets = false; i++ }
-        // Saut de ligne DANS une cellule → remplacé par espace
         else { cellule += (c === '\r' || c === '\n') ? ' ' : c; i++ }
       } else {
         if (c === '"') { dansGuillemets = true; i++ }
@@ -84,10 +91,7 @@ function parseCSV(contenu: string): Record<string, string>[] {
 
   const toutes = tokeniser(contenu).filter(l => l.some(c => c !== ''))
   if (toutes.length < 2) return []
-
-  // Nettoyage des en-têtes : sauts de ligne internes → espace simple
   const entetes = toutes[0].map(h => h.replace(/\s+/g, ' ').trim())
-
   return toutes.slice(1).map(valeurs =>
     Object.fromEntries(entetes.map((h, i) => [h, valeurs[i] ?? '']))
   )
@@ -96,118 +100,191 @@ function parseCSV(contenu: string): Record<string, string>[] {
 // ─── Détection automatique du type de colonne ────────────────────────────────
 
 function detecterTypeColonne(key: string, valeurs: string[]): ColonneType {
-  // Préfixe explicite dans le nom de colonne
   if (key.startsWith('range__')) return 'range'
   if (key.startsWith('select__')) return 'select'
   if (key.startsWith('text__')) return 'text'
-
-  // Colonne réservée
   if (COLONNES_RESERVEES.has(key)) return 'reserved'
-
-  // Toutes les valeurs sont numériques → range
   const valeursNonVides = valeurs.filter(v => v !== '')
-  if (valeursNonVides.length > 0 && valeursNonVides.every(v => !isNaN(Number(v)))) {
-    return 'range'
-  }
-
-  // Peu de valeurs uniques (< 20) → select
+  if (valeursNonVides.length > 0 && valeursNonVides.every(v => !isNaN(Number(v)))) return 'range'
   const uniques = new Set(valeursNonVides)
-  if (uniques.size <= 10) {
-    return 'select'
-  }
-
-  // Sinon → texte libre
+  if (uniques.size <= 10) return 'select'
   return 'text'
 }
 
 function nomLisible(key: string): string {
-  // Enlever les préfixes de type
   const sansPrefixe = key.replace(/^(range|select|text)__/, '')
-  return sansPrefixe
-    .split('_')
-    .map(mot => mot.charAt(0).toUpperCase() + mot.slice(1))
-    .join(' ')
+  return sansPrefixe.split('_').map(mot => mot.charAt(0).toUpperCase() + mot.slice(1)).join(' ')
 }
 
-// ─── Transformation XML → HTML ───────────────────────────────────────────────
+// ─── Moteur de rendu XML → HTML (preserveOrder: true) ────────────────────────
+//
+// Avec preserveOrder:true, fast-xml-parser retourne des tableaux de nœuds.
+// Chaque nœud est un objet avec UNE seule clé = nom de la balise (ou '#text').
+// Les attributs sont dans une clé ':@' séparée, au même niveau que la balise.
+//
+// Exemple pour <Paragraph type="x"><Line>Hello</Line></Paragraph> :
+// [
+//   { ':@': { '@_type': 'x' }, Paragraph: [ { Line: [ { '#text': 'Hello' } ] } ] }
+// ]
+
+type OrdredNode = Record<string, unknown>
+
+let ancreCounter = 0
+
+function genAncreId(balise: string): string {
+  return `${balise}-${++ancreCounter}`
+}
 
 /**
- * Règles de transformation des balises XML en HTML.
- * À enrichir selon vos besoins.
+ * Extrait le texte brut d'un tableau de nœuds ordonnés.
  */
-const REGLES_BALISES: Record<string, { tag: string; classe?: string }> = {
-  paragraphe: { tag: 'p', classe: 'transcription-paragraphe' },
-  persName:   { tag: 'span', classe: 'transcription-personne' },
-  placeName:  { tag: 'span', classe: 'transcription-lieu' },
-  hi:         { tag: 'em', classe: 'transcription-hi' },
-  note:       { tag: 'aside', classe: 'transcription-note' },
-  titre_section: { tag: 'h3', classe: 'transcription-titre' },
+function extraireTexteOrdered(nodes: OrdredNode[]): string {
+  return nodes
+    .map(node => {
+      const key = Object.keys(node).find(k => k !== ':@')
+      if (!key) return ''
+      if (key === '#text') return String(node[key])
+      const enfants = node[key]
+      return Array.isArray(enfants) ? extraireTexteOrdered(enfants as OrdredNode[]) : ''
+    })
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
 }
 
-function xmlNodeVersHtml(node: unknown, nomBalise?: string): string {
-  if (typeof node === 'string' || typeof node === 'number') {
-    return String(node)
-  }
-  if (typeof node !== 'object' || node === null) return ''
-
-  const obj = node as Record<string, unknown>
+/**
+ * Convertit un tableau de nœuds ordonnés en HTML.
+ * C'est la fonction principale récursive.
+ */
+function nodesVersHtml(
+  nodes: OrdredNode[],
+  rules: XmlRuleMap,
+  pageN: string | number,
+  ancres: Ancre[],
+): string {
   let html = ''
 
-  for (const [key, valeur] of Object.entries(obj)) {
-    if (key === '@_rend' || key === '@_n' || key.startsWith('@_')) continue
+  for (const node of nodes) {
+    // Clé du nœud (nom de balise ou '#text'), ':@' contient les attributs
+    const key = Object.keys(node).find(k => k !== ':@')
+    if (!key) continue
 
-    const regle = REGLES_BALISES[key]
-    const contenuEnfants = Array.isArray(valeur)
-      ? valeur.map(v => xmlNodeVersHtml(v, key)).join('')
-      : xmlNodeVersHtml(valeur, key)
-
-    if (regle) {
-      const attrs = regle.classe ? ` class="${regle.classe}"` : ''
-      // Passer l'attribut rend si présent
-      const rend = (obj['@_rend'] as string) ?? ''
-      const dataRend = rend ? ` data-rend="${rend}"` : ''
-      html += `<${regle.tag}${attrs}${dataRend}>${contenuEnfants}</${regle.tag}>`
-    } else if (key === 'page') {
-      // Les pages sont traitées séparément
-      html += contenuEnfants
-    } else {
-      // Balise inconnue → span avec classe générique
-      html += `<span class="transcription-${key}">${contenuEnfants}</span>`
+    // Nœud texte
+    if (key === '#text') {
+      html += String(node[key])
+      continue
     }
+
+    const keyLower = key.toLowerCase()
+    const rule = rules[keyLower]
+    const attrs = (node[':@'] ?? {}) as Record<string, string>
+    const enfants = (node[key] ?? []) as OrdredNode[]
+
+    // Règle : ignorer complètement
+    if (rule?.ignore) continue
+
+    // Règle : traverser sans générer de balise
+    if (rule?.skipSelf) {
+      html += nodesVersHtml(enfants, rules, pageN, ancres)
+      continue
+    }
+
+    // Contenu enfants
+    const contenu = nodesVersHtml(enfants, rules, pageN, ancres)
+
+    // Pas de règle connue → span générique
+    if (!rule?.tag) {
+      html += `<span class="transcription-${keyLower}">${contenu}</span>`
+      continue
+    }
+
+    // Attributs HTML supplémentaires via la fonction attrs de la règle
+    // On lui passe les attributs XML du nœud (normalisés sans préfixe @_)
+    const attrsXml: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(attrs)) {
+      attrsXml[k] = v  // k est déjà sous la forme '@_xxx'
+    }
+    const attrsExtra = rule.attrs ? rule.attrs(attrsXml) : {}
+
+    // Ancre cliquable
+    let ancreHtml = ''
+    let idAttr = ''
+    if (rule.anchorable) {
+      const ancreId = genAncreId(keyLower)
+      idAttr = ancreId
+      const label = extraireTexteOrdered(enfants)
+      ancres.push({ id: ancreId, label: label || keyLower, pageN, inPassages: rule.listePassages ?? false })
+      ancreHtml = `<a class="transcription-ancre" href="#${ancreId}" aria-label="Lien direct vers ce passage" title="Lien direct">#</a>`
+    }
+
+    const attrsStr = [
+      rule.classe ? `class="${rule.classe}"` : '',
+      idAttr      ? `id="${idAttr}"`         : '',
+      ...Object.entries(attrsExtra).map(([k, v]) => `${k}="${v}"`),
+    ].filter(Boolean).join(' ')
+
+    html += `<${rule.tag}${attrsStr ? ' ' + attrsStr : ''}>${ancreHtml}${contenu}</${rule.tag}>`
   }
 
   return html
 }
 
+// ─── Découpage en pages ───────────────────────────────────────────────────────
+
 function xmlVersPages(xmlContenu: string): TranscriptionPage[] {
+  ancreCounter = 0
+
+  const schemaName = detecterSchema(xmlContenu)
+  const rules = SCHEMA_RULES[schemaName] ?? SCHEMA_RULES['default']
+
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
-    preserveOrder: false,
+    preserveOrder: true,       // ← préserve l'ordre et la structure exacte du XML
     textNodeName: '#text',
+    removeNSPrefix: true,
   })
 
-  let parsed: Record<string, unknown>
+  let parsed: OrdredNode[]
   try {
-    parsed = parser.parse(xmlContenu)
+    parsed = parser.parse(xmlContenu) as OrdredNode[]
   } catch (e) {
-    console.error('Erreur parsing XML:', e)
+    console.error('[parseData] Erreur parsing XML:', e)
     return []
   }
 
-  const transcription = parsed['transcription'] as Record<string, unknown> | undefined
-  if (!transcription) return []
+  // Trouver la racine (ignorer '?xml')
+  const racineNode = parsed.find(n => {
+    const k = Object.keys(n).find(k => k !== ':@')
+    return k && k !== '?xml'
+  })
+  if (!racineNode) return []
 
-  const pagesRaw = transcription['page']
-  if (!pagesRaw) return []
+  const racineKey = Object.keys(racineNode).find(k => k !== ':@')!
+  const racineEnfants = (racineNode[racineKey] ?? []) as OrdredNode[]
 
-  const pages = Array.isArray(pagesRaw) ? pagesRaw : [pagesRaw]
+  // Chercher les nœuds <Page> (insensible à la casse)
+  const pageNodes = racineEnfants.filter(n => {
+    const k = Object.keys(n).find(k => k !== ':@')
+    return k?.toLowerCase() === 'page'
+  })
 
-  return pages.map((page: unknown) => {
-    const p = page as Record<string, unknown>
-    const n = (p['@_n'] as string | number) ?? '?'
-    const html = xmlNodeVersHtml(p)
-    return { n, html }
+  if (pageNodes.length === 0) {
+    // Pas de pagination → tout en une seule page
+    const ancres: Ancre[] = []
+    const html = nodesVersHtml(racineEnfants, rules, 1, ancres)
+    return [{ n: 1, html, ancres }]
+  }
+
+  return pageNodes.map(pageNode => {
+    const pageKey = Object.keys(pageNode).find(k => k !== ':@')!
+    const attrs = (pageNode[':@'] ?? {}) as Record<string, string>
+    const n = attrs['@_n'] ?? '?'
+    const enfants = (pageNode[pageKey] ?? []) as OrdredNode[]
+    const ancres: Ancre[] = []
+    const html = nodesVersHtml(enfants, rules, n, ancres)
+    return { n, html, ancres }
   })
 }
 
@@ -255,16 +332,11 @@ export function getColonnesMeta(livres: Livre[]): ColonneMeta[] {
       const type = detecterTypeColonne(key, valeurs)
       if (type === 'reserved') return null
 
-      const meta: ColonneMeta = {
-        key,
-        label: nomLisible(key),
-        type,
-      }
+      const meta: ColonneMeta = { key, label: nomLisible(key), type }
 
       if (type === 'select') {
         meta.valeurs = [...new Set(valeurs.filter(v => v !== ''))].sort()
       }
-
       if (type === 'range') {
         const nombres = valeurs.filter(v => v !== '').map(Number)
         meta.min = Math.min(...nombres)
@@ -275,8 +347,3 @@ export function getColonnesMeta(livres: Livre[]): ColonneMeta[] {
     })
     .filter((m): m is ColonneMeta => m !== null)
 }
-
-// ─── Note sur le CSV ──────────────────────────────────────────────────────────
-// Les colonnes obligatoires sont : id, titre, auteur, manifeste_url
-// Les en-têtes avec sauts de ligne Excel (ex: "Manuscrit /\nimprimé") sont
-// automatiquement normalisés en "Manuscrit / imprimé" par le parser.

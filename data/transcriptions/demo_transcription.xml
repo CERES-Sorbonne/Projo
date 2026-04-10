@@ -1,0 +1,85 @@
+<?xml version='1.0' encoding='utf-8'?>
+<HistoricalDocument xmlns="http://example.com/historicaldocument">
+  <Page n="1">
+    <Header>
+      <Heading type="other">
+        <Line>Rés FNA 1946</Line>
+        <Line>13</Line>
+      </Heading>
+    </Header>
+    <Body>
+      <Gap reason="illegible" extent="Full page content area, approximately 21cm x 10cm." />
+    </Body>
+  </Page>
+  <Page n="2">
+    <Body>
+      <Paragraph>
+        <Line>FACÉTIS</Line>
+        <Line>1580.</Line>
+      </Paragraph>
+    </Body>
+  </Page>
+  <Page n="3">
+    <Body>
+      <Figure>
+        <Description>Ornate woodcut with floral and scrollwork designs, positioned to the left of
+          the main title.</Description>
+      </Figure>
+      <Heading type="main">
+        <Line>LA NOV</Line>
+        <Line>VELLE FABRI</Line>
+        <Line>QVE DES EXCEL-</Line>
+        <Line>lens traicts de la verité,</Line>
+        <Line>Liure pour inciter les re-</Line>
+        <Line>ueurs,triſtes, &amp; melanco-</Line>
+        <Line>liques, à viure de plaiſir.</Line>
+      </Heading>
+      <Paragraph>
+        <Line>Par Philippe d'Alcripe</Line>
+        <Line>Sieur de Neri, en Verbos.</Line>
+        <Line>Omnis homo mendax.</Line>
+        <Line>Eſtiſt der treitz.</Line>
+      </Paragraph>
+      <Paragraph>
+        <Line>A ROVEN,</Line>
+        <Line>Chez Richard Aubert, pres</Line>
+        <Line>ſaint Erblanc, deuant la</Line>
+        <Line>Cigongne.</Line>
+      </Paragraph>
+      <Paragraph>
+        <Line>1580.</Line>
+      </Paragraph>
+      <Figure>
+        <Description>Ornate woodcut with floral and scrollwork designs, positioned to the right of
+          the main title.</Description>
+      </Figure>
+    </Body>
+  </Page>
+  <Page n="4">
+    <Header>
+      <PageNumber>11</PageNumber>
+    </Header>
+    <Body>
+      <Paragraph>
+        <Line>ur de Neri, en Verbos.</Line>
+      </Paragraph>
+      <Paragraph>
+        <Line>omnis homo mendax.</Line>
+      </Paragraph>
+      <Paragraph>
+        <Line>ist der treitz.</Line>
+      </Paragraph>
+      <Paragraph>
+        <Line>A ROVEN,</Line>
+        <Line>Richard Aubert, pres</Line>
+        <Line>t Erblanc, deuant la</Line>
+        <Line>Cigongne.</Line>
+      </Paragraph>
+      <Stamp
+        description="Circular library stamp with a central emblem (possibly a crowned shield) and surrounding text, partially obscured by other elements on the page. Visible text includes 'BIBLIOTHEQUE ROYALE' and 'G 1833'." />
+    </Body>
+    <Footer>
+      <CatchWord>1580.</CatchWord>
+    </Footer>
+  </Page>
+</HistoricalDocument>

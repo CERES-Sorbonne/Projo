@@ -21,6 +21,12 @@ const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.au
 
 const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages'])
 const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
+
+// Construire la liste plate de toutes les ancres (toutes pages confondues)
+// pour le panneau de navigation et la génération d'URLs directes
+const toutesAncres = livre.transcriptionPages.flatMap(p => p.ancres ?? []).filter(a => a.inPassages)
+// URL de base de la page courante (pour construire des URLs absolues partageables)
+const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `/livres/${id}`
 ---
 
 <Base titre={livre.titre} description={`${livre.titre} — ${auteurs}`}>
@@ -63,11 +69,7 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
       </div>
     </div>
 
-    <!--
-      Le viewer Mirador est instancié UNE SEULE FOIS ici dans un conteneur
-      hors-flux. setMode() le déplace (appendChild) dans le slot cible sans
-      le démonter, évitant ainsi une réinitialisation de Mirador à chaque bascule.
-    -->
+    <!-- Viewer monté une seule fois hors flux, déplacé par setMode() -->
     <div id="viewer-anchor" style="display:none">
       <MiradorViewer manifestUrl={livre.manifeste_url} client:only="react" />
     </div>
@@ -85,6 +87,12 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
             <span class="material-icons">subject</span>
             Transcription
           </button>
+          {toutesAncres.length > 0 && (
+            <button class="onglet" id="btn-passages" onclick="afficherPanel('passages')">
+              <span class="material-icons">link</span>
+              Passages
+            </button>
+          )}
         </div>
 
         <div id="panel-viewer" class="panel actif">
@@ -122,6 +130,40 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
             </div>
           )}
         </div>
+
+        <!-- ── Panneau Passages (ancres navigables) ── -->
+        {toutesAncres.length > 0 && (
+          <div id="panel-passages" class="panel">
+            <div class="passages-conteneur">
+              <p class="passages-intro">
+                <span class="material-icons" style="font-size:16px;vertical-align:middle">info</span>
+                Chaque lien ouvre directement ce passage dans la transcription.
+                Vous pouvez copier l'URL pour partager un endroit précis du texte.
+              </p>
+              <div class="passages-liste">
+                {toutesAncres.map(ancre => (
+                  <div class="passage-item">
+                    <span class="passage-page chip">p. {ancre.pageN}</span>
+                    <a
+                      class="passage-lien"
+                      href={`#${ancre.id}`}
+                      onclick={`allerAuPassage('${ancre.id}'); return false;`}
+                    >
+                      {ancre.label || '—'}
+                    </a>
+                    <button
+                      class="passage-copier"
+                      onclick={`copierUrl('${baseUrl}#${ancre.id}', this)`}
+                      title="Copier le lien direct"
+                    >
+                      <span class="material-icons">content_copy</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <!-- ── MODE CÔTE À CÔTE ── -->
@@ -210,6 +252,41 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
     document.querySelectorAll('.transcription-page-btn-cote').forEach((b, i) => b.classList.toggle('actif', i === index))
   }
 
+  // ── Navigation vers un passage (ancre) ───────────────────────────────────────
+  // Bascule sur l'onglet transcription, affiche la bonne page, scrolle jusqu'à l'élément.
+  function allerAuPassage(ancreId: string) {
+    const el = document.getElementById(ancreId)
+    if (!el) return
+
+    // Trouver la page parente
+    const pagePanelOnglets = el.closest('[id^="page-"]') as HTMLElement | null
+    if (pagePanelOnglets) {
+      const pageIndex = parseInt(pagePanelOnglets.id.replace('page-', ''), 10)
+      if (!isNaN(pageIndex)) afficherPage(pageIndex)
+    }
+
+    // Basculer sur l'onglet transcription
+    afficherPanel('transcription')
+
+    // Scroll avec un léger délai pour laisser le DOM s'afficher
+    setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('transcription-ancre-cible')
+      setTimeout(() => el.classList.remove('transcription-ancre-cible'), 2000)
+    }, 80)
+  }
+
+  // ── Copier l'URL d'un passage ────────────────────────────────────────────────
+  function copierUrl(url: string, btn: HTMLButtonElement) {
+    navigator.clipboard.writeText(url).then(() => {
+      const icon = btn.querySelector('.material-icons')
+      if (icon) {
+        icon.textContent = 'check'
+        setTimeout(() => { icon.textContent = 'content_copy' }, 1800)
+      }
+    })
+  }
+
   // ── Mode d'affichage ─────────────────────────────────────────────────────────
   function setMode(mode: 'onglets' | 'cote') {
     const corps      = document.getElementById('livre-corps')
@@ -234,11 +311,21 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
     sessionStorage.setItem('livreMode', mode)
   }
 
-  // ── Init : attendre que React (client:only) ait monté le viewer ──────────────
+  // ── Gestion des ancres via l'URL (#ancre-id) ─────────────────────────────────
+  function gererAncreUrl() {
+    const hash = window.location.hash?.slice(1)
+    if (hash) {
+      allerAuPassage(hash)
+    }
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────────
   window.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
       const modeSauvegarde = sessionStorage.getItem('livreMode') as 'onglets' | 'cote' | null
       setMode(modeSauvegarde === 'cote' ? 'cote' : 'onglets')
+      // Gérer l'ancre après initialisation du mode
+      setTimeout(gererAncreUrl, 200)
     }, 100)
   })
 
@@ -246,6 +333,8 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
   ;(window as any).afficherPage     = afficherPage
   ;(window as any).afficherPageCote = afficherPageCote
   ;(window as any).setMode          = setMode
+  ;(window as any).allerAuPassage   = allerAuPassage
+  ;(window as any).copierUrl        = copierUrl
 </script>
 
 <style>
@@ -280,11 +369,7 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
     margin-bottom: 4px;
   }
 
-  .livre-auteur {
-    color: var(--md-on-surface-medium);
-    margin-bottom: 12px;
-  }
-
+  .livre-auteur { color: var(--md-on-surface-medium); margin-bottom: 12px; }
   .livre-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
   .mode-barre {
@@ -321,24 +406,15 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 
   .mode-btn:last-child { border-right: none; }
   .mode-btn .material-icons { font-size: 18px; }
-
-  .mode-btn.actif {
-    background: var(--md-primary);
-    color: var(--md-on-primary);
-  }
-
-  .mode-btn:not(.actif):hover {
-    background: rgba(26,35,126,0.06);
-    color: var(--md-primary);
-  }
+  .mode-btn.actif { background: var(--md-primary); color: var(--md-on-primary); }
+  .mode-btn:not(.actif):hover { background: rgba(26,35,126,0.06); color: var(--md-primary); }
 
   .livre-corps { margin-bottom: 32px; }
 
   .mode-onglets #section-onglets { display: block; }
   .mode-onglets #section-cote    { display: none; }
-
-  .mode-cote #section-onglets { display: none; }
-  .mode-cote #section-cote    { display: grid; }
+  .mode-cote #section-onglets    { display: none; }
+  .mode-cote #section-cote       { display: grid; }
 
   .viewer-slot { width: 100%; }
 
@@ -367,31 +443,122 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
     transition: color var(--transition), border-color var(--transition);
   }
 
-  .onglet.actif {
-    color: var(--md-primary);
-    border-bottom-color: var(--md-primary);
-  }
-
+  .onglet.actif { color: var(--md-primary); border-bottom-color: var(--md-primary); }
   .onglet:hover { color: var(--md-primary); background: rgba(26,35,126,0.04); }
 
   .panel { display: none; }
   .panel.actif { display: block; }
 
+  /* ── Ancres dans la transcription ── */
+  :global(.transcription-ancre) {
+    display: inline-block;
+    margin-left: 0.4em;
+    font-size: 0.75em;
+    color: var(--md-primary);
+    opacity: 0;
+    transition: opacity 150ms;
+    text-decoration: none;
+    vertical-align: middle;
+    line-height: 1;
+  }
+
+  :global(*:hover > .transcription-ancre),
+  :global(.transcription-ancre:focus) {
+    opacity: 0.6;
+  }
+
+  :global(.transcription-ancre:hover) {
+    opacity: 1;
+  }
+
+  /* Mise en surbrillance lors du scroll vers une ancre */
+  :global(.transcription-ancre-cible) {
+    animation: pulse-ancre 1.8s ease-out;
+  }
+
+  @keyframes pulse-ancre {
+    0%   { background: rgba(26, 35, 126, 0.18); outline: 2px solid rgba(26, 35, 126, 0.4); border-radius: 3px; }
+    100% { background: transparent; outline: none; }
+  }
+
+  /* ── Panneau Passages ── */
+  .passages-conteneur { padding: 24px; }
+
+  .passages-intro {
+    font-size: 0.85rem;
+    color: var(--md-on-surface-medium);
+    margin-bottom: 20px;
+    padding: 10px 14px;
+    background: #f5f5f5;
+    border-radius: 4px;
+    line-height: 1.5;
+  }
+
+  .passages-liste {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .passage-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--md-divider);
+    background: var(--md-surface);
+    transition: background var(--transition);
+  }
+
+  .passage-item:hover { background: #f5f5f5; }
+
+  .passage-page {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+  }
+
+  .passage-lien {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-texte);
+    font-size: 0.9rem;
+    color: var(--md-primary);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .passage-lien:hover { text-decoration: underline; }
+
+  .passage-copier {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--md-on-surface-medium);
+    display: flex;
+    align-items: center;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color var(--transition), background var(--transition);
+  }
+
+  .passage-copier:hover { color: var(--md-primary); background: rgba(26,35,126,0.08); }
+  .passage-copier .material-icons { font-size: 16px; }
+
+  /* ── Colonnes côte à côte ── */
   .cote-wrapper {
     grid-template-columns: 1fr 1fr;
     gap: 16px;
     align-items: start;
   }
 
-  @media (max-width: 900px) {
-    .cote-wrapper { grid-template-columns: 1fr; }
-  }
+  @media (max-width: 900px) { .cote-wrapper { grid-template-columns: 1fr; } }
 
-  .cote-colonne {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+  .cote-colonne { display: flex; flex-direction: column; overflow: hidden; }
 
   .cote-entete {
     display: flex;
@@ -408,11 +575,7 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
   }
 
   .cote-entete .material-icons { font-size: 18px; }
-
-  .cote-transcription-scroll {
-    max-height: 70vh;
-    overflow-y: auto;
-  }
+  .cote-transcription-scroll { max-height: 70vh; overflow-y: auto; }
 
   .transcription-conteneur { padding: 24px; }
 
@@ -448,13 +611,9 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 
   .transcription-page { display: none; }
   .transcription-page.active { display: block; }
-
   .transcription-page-entete { margin-bottom: 16px; }
 
-  .transcription-texte {
-    max-width: 680px;
-    margin: 0 auto;
-  }
+  .transcription-texte { max-width: 680px; margin: 0 auto; }
 
   .transcription-vide {
     display: flex;
@@ -467,4 +626,69 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
   }
 
   .transcription-vide .material-icons { font-size: 48px; opacity: 0.4; }
+
+  /* ── Styles des éléments HTR générés ── */
+  :global(.transcription-heading) {
+    font-family: var(--font-texte);
+    font-size: 1.15rem;
+    font-weight: 600;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+    color: var(--md-on-surface);
+  }
+
+  :global(.transcription-heading[data-type="main"]) {
+    font-size: 1.35rem;
+    text-align: center;
+    border-bottom: 1px solid var(--md-divider);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  :global(.transcription-line) {
+    display: block;
+    line-height: 1.7;
+  }
+
+  :global(.transcription-figure) {
+    margin: 1rem 0;
+    padding: 10px 14px;
+    background: #fafafa;
+    border: 1px dashed var(--md-divider);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--md-on-surface-medium);
+    font-style: italic;
+  }
+
+  :global(.transcription-figcaption) { display: block; }
+
+  :global(.transcription-gap) {
+    display: inline-block;
+    color: var(--md-on-surface-medium);
+    font-style: italic;
+    font-size: 0.85em;
+    background: #f5f5f5;
+    border-radius: 3px;
+    padding: 2px 6px;
+    cursor: help;
+  }
+
+  :global(.transcription-gap::before) { content: '[…]'; }
+
+  :global(.transcription-stamp) {
+    display: inline-block;
+    font-size: 0.75em;
+    color: var(--md-on-surface-medium);
+    background: #f0f0f0;
+    border: 1px solid var(--md-divider);
+    border-radius: 50%;
+    padding: 2px 8px;
+    cursor: help;
+    vertical-align: middle;
+  }
+
+  :global(.transcription-stamp::before) { content: '⊕'; margin-right: 4px; }
+
+  :global(.transcription-header) { display: none; } /* masqué par défaut */
 </style>

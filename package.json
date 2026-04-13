@@ -12,6 +12,7 @@
     "@emotion/react": "^11.0.0",
     "@emotion/styled": "^11.0.0",
     "@mui/material": "^7.0.0",
+    "@samvera/clover-iiif": "^3.4.0",
     "astro": "^5.0.0",
     "fast-xml-parser": "^4.3.0",
     "fuse.js": "^7.0.0",

@@ -1,6 +1,6 @@
 ---
 import Base from '../../layouts/Base.astro'
-import MiradorViewer from '../../components/MiradorViewer.jsx'
+import CloverViewer from '../../components/CloverViewer.jsx'
 import { getLivres, getLivreAvecTranscription } from '../../lib/parseData'
 
 export async function getStaticPaths() {
@@ -29,7 +29,6 @@ const nbPages = livre.transcriptionPages.length
 ---
 
 <Base titre={livre.titre} description={`${livre.titre} — ${auteurs}`}>
-  <!-- En-tête du livre -->
   <div class="livre-entete">
     <div class="conteneur">
       <div class="fil-ariane">
@@ -52,7 +51,6 @@ const nbPages = livre.transcriptionPages.length
     </div>
   </div>
 
-  <!-- Corps principal -->
   <div class="conteneur">
     <div class="mode-barre">
       <div class="mode-boutons" role="group" aria-label="Mode d'affichage">
@@ -68,13 +66,15 @@ const nbPages = livre.transcriptionPages.length
     </div>
 
     <!--
-      Le viewer React est monté ici une seule fois.
-      La synchronisation passe par des CustomEvents sur window :
-        mirador:pagechange  — Mirador → page de transcription
-        mirador:goto        — transcription → Mirador
+      CloverViewer monté avec client:load (pas client:only) pour pouvoir
+      recevoir des props mises à jour si nécessaire.
+      Synchro via CustomEvents :
+        clover:goto        { index }  transcription → viewer
+        clover:pagechange  { index }  viewer → transcription
+        clover:sync-enabled / clover:sync-disabled  — activé en mode côte-à-côte
     -->
     <div id="viewer-anchor" style="display:none">
-      <MiradorViewer manifestUrl={livre.manifeste_url} client:only="react" />
+      <CloverViewer manifestUrl={livre.manifeste_url} client:only="react" />
     </div>
 
     <div id="livre-corps" class="livre-corps mode-onglets">
@@ -99,7 +99,7 @@ const nbPages = livre.transcriptionPages.length
         </div>
 
         <div id="panel-viewer" class="panel actif">
-          <div id="viewer-slot-onglets" class="viewer-slot"></div>
+          <div id="viewer-slot-onglets" class="viewer-slot viewer-slot-onglets"></div>
         </div>
 
         <div id="panel-transcription" class="panel">
@@ -203,7 +203,7 @@ const nbPages = livre.transcriptionPages.length
               </span>
             )}
           </div>
-          <div id="viewer-slot-cote" class="viewer-slot"></div>
+          <div id="viewer-slot-cote" class="viewer-slot viewer-slot-cote"></div>
         </section>
 
         <section class="cote-colonne cote-transcription-colonne carte">
@@ -211,7 +211,6 @@ const nbPages = livre.transcriptionPages.length
             <span class="material-icons">subject</span>
             Transcription
           </div>
-
           {livre.transcriptionPages.length > 0 ? (
             <div class="transcription-conteneur transcription-conteneur--fixe">
               {nbPages > 1 && (
@@ -273,15 +272,17 @@ const nbPages = livre.transcriptionPages.length
         </section>
 
       </div>
-    </div><!-- fin #livre-corps -->
+    </div>
   </div>
 </Base>
 
-<script define:vars={{ nbPages }}>
-  // ── État ────────────────────────────────────────────────────────────────────
-  const etat = { onglets: 0, cote: 0 }
 
-  // ── Viewer : déplacement sans démontage ─────────────────────────────────────
+<script define:vars={{ nbPages }}>
+  // ── État unique partagé entre les deux modes ──────────────────────────────────
+  // Un seul etat.page évite toute désynchronisation quand on bascule de mode.
+  const etat = { page: 0 }
+
+  // ── Déplacement du viewer sans démontage ─────────────────────────────────────
   function placerViewer(slotId) {
     const anchor = document.getElementById('viewer-anchor')
     const slot   = document.getElementById(slotId)
@@ -304,40 +305,32 @@ const nbPages = livre.transcriptionPages.length
     document.getElementById(`btn-${nom}`)?.classList.add('actif')
   }
 
-  // ── Affichage d'une page ──────────────────────────────────────────────────────
+  // ── Affichage d'une page dans un mode ────────────────────────────────────────
   function afficherPage(mode, index) {
     const prefix = mode === 'onglets' ? 'page-' : 'page-cote-'
-    const total  = nbPages
+    index = Math.max(0, Math.min(index, nbPages - 1))
+    etat.page = index  // état unique
 
-    index = Math.max(0, Math.min(index, total - 1))
-    etat[mode] = index
-
-    // Pages visibles
     document.querySelectorAll(`[id^="${prefix}"]`).forEach((p, i) =>
       p.classList.toggle('active', i === index)
     )
 
-    // Select
     const sel = document.getElementById(`select-page-${mode}`)
     if (sel) sel.value = String(index)
 
-    // Boutons haut
     const btnPrev = document.getElementById(`btn-prev-${mode}`)
     const btnNext = document.getElementById(`btn-next-${mode}`)
     if (btnPrev) btnPrev.disabled = index === 0
-    if (btnNext) btnNext.disabled = index === total - 1
+    if (btnNext) btnNext.disabled = index === nbPages - 1
 
-    // Boutons bas
     const btnBasPrev = document.getElementById(`btn-bas-prev-${mode}`)
     const btnBasNext = document.getElementById(`btn-bas-next-${mode}`)
     if (btnBasPrev) btnBasPrev.classList.toggle('invisible', index === 0)
-    if (btnBasNext) btnBasNext.classList.toggle('invisible', index === total - 1)
+    if (btnBasNext) btnBasNext.classList.toggle('invisible', index === nbPages - 1)
 
-    // Compteur bas
     const info = document.getElementById(`nav-bas-info-${mode}`)
-    if (info) info.textContent = `Page ${index + 1} / ${total}`
+    if (info) info.textContent = `Page ${index + 1} / ${nbPages}`
 
-    // Scroll haut de la zone texte
     const scroll = document.querySelector(
       mode === 'onglets'
         ? '#panel-transcription .transcription-scroll'
@@ -346,33 +339,48 @@ const nbPages = livre.transcriptionPages.length
     if (scroll) scroll.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  // Resynchronise l'affichage des deux modes sur etat.page sans le modifier.
+  // Appelé lors du changement de mode.
+  function syncAffichageTousModes() {
+    const idx = etat.page
+    for (const mode of ['onglets', 'cote']) {
+      const prefix = mode === 'onglets' ? 'page-' : 'page-cote-'
+      document.querySelectorAll(`[id^="${prefix}"]`).forEach((p, i) =>
+        p.classList.toggle('active', i === idx)
+      )
+      const sel = document.getElementById(`select-page-${mode}`)
+      if (sel) sel.value = String(idx)
+      const btnPrev = document.getElementById(`btn-prev-${mode}`)
+      const btnNext = document.getElementById(`btn-next-${mode}`)
+      if (btnPrev) btnPrev.disabled = idx === 0
+      if (btnNext) btnNext.disabled = idx === nbPages - 1
+      const btnBasPrev = document.getElementById(`btn-bas-prev-${mode}`)
+      const btnBasNext = document.getElementById(`btn-bas-next-${mode}`)
+      if (btnBasPrev) btnBasPrev.classList.toggle('invisible', idx === 0)
+      if (btnBasNext) btnBasNext.classList.toggle('invisible', idx === nbPages - 1)
+      const info = document.getElementById(`nav-bas-info-${mode}`)
+      if (info) info.textContent = `Page ${idx + 1} / ${nbPages}`
+    }
+  }
+
   function naviguerPage(mode, delta) {
-    afficherPage(mode, etat[mode] + delta)
-    if (mode === 'cote') envoyerPageAMirador(etat.cote)
+    afficherPage(mode, etat.page + delta)
+    // Toujours envoyer au viewer (silencieux en mode onglets, visible en côte-à-côte)
+    window.dispatchEvent(new CustomEvent('clover:goto', { detail: { index: etat.page } }))
   }
 
   function allerPageSelect(mode, valeur) {
     afficherPage(mode, parseInt(valeur, 10))
-    if (mode === 'cote') envoyerPageAMirador(etat.cote)
+    window.dispatchEvent(new CustomEvent('clover:goto', { detail: { index: etat.page } }))
   }
 
-  // ── Synchronisation Mirador ↔ transcription ──────────────────────────────────
-  //
-  // Communication avec le composant React via CustomEvents :
-  //   'mirador:pagechange'  { detail: { index } }  — Mirador → ici
-  //   'mirador:goto'        { detail: { index } }  — ici → Mirador
-
-  function envoyerPageAMirador(index) {
-    window.dispatchEvent(new CustomEvent('mirador:goto', { detail: { index } }))
-  }
-
-  // Réception des changements de canvas depuis Mirador
-  window.addEventListener('mirador:pagechange', (e) => {
-    // Synchro uniquement en mode côte-à-côte
+  // ── Viewer → transcription ───────────────────────────────────────────────────
+  window.addEventListener('clover:pagechange', (e) => {
+    // N'écouter qu'en mode côte-à-côte (en mode onglets le viewer est libre)
     const corps = document.getElementById('livre-corps')
     if (!corps?.className.includes('mode-cote')) return
     const index = e.detail?.index ?? 0
-    if (index !== etat.cote) afficherPage('cote', index)
+    if (index !== etat.page) afficherPage('cote', index)
   })
 
   // ── Navigation vers un passage (ancre) ───────────────────────────────────────
@@ -380,13 +388,28 @@ const nbPages = livre.transcriptionPages.length
     const el = document.getElementById(ancreId)
     if (!el) return
 
-    const pagePanelOnglets = el.closest('[id^="page-"]')
-    if (pagePanelOnglets) {
-      const pageIndex = parseInt(pagePanelOnglets.id.replace('page-', ''), 10)
-      if (!isNaN(pageIndex)) afficherPage('onglets', pageIndex)
+    // Trouver l'index de la page onglets qui contient l'élément
+    let pageIndex = null
+    const pagePanel = el.closest('[id^="page-"]')
+    if (pagePanel) {
+      const parsed = parseInt(pagePanel.id.replace('page-', ''), 10)
+      if (!isNaN(parsed)) pageIndex = parsed
     }
 
-    afficherPanel('transcription')
+    const corps = document.getElementById('livre-corps')
+    const modeCote = corps?.className.includes('mode-cote')
+
+    if (modeCote) {
+      if (pageIndex !== null) afficherPage('cote', pageIndex)
+    } else {
+      if (pageIndex !== null) afficherPage('onglets', pageIndex)
+      afficherPanel('transcription')
+    }
+
+    // Synchroniser le viewer dans tous les cas
+    if (pageIndex !== null) {
+      window.dispatchEvent(new CustomEvent('clover:goto', { detail: { index: pageIndex } }))
+    }
 
     setTimeout(() => {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -413,6 +436,7 @@ const nbPages = livre.transcriptionPages.length
     if (!corps) return
 
     if (mode === 'onglets') {
+      window.dispatchEvent(new CustomEvent('clover:sync-disabled'))
       retirerViewer('viewer-slot-cote')
       corps.className = 'livre-corps mode-onglets'
       btnOnglets?.classList.add('actif')
@@ -424,27 +448,41 @@ const nbPages = livre.transcriptionPages.length
       btnOnglets?.classList.remove('actif')
       btnCote?.classList.add('actif')
       placerViewer('viewer-slot-cote')
-      // Aligner Mirador sur la page de transcription courante
-      envoyerPageAMirador(etat.cote)
+      // Resynchroniser l'affichage de la colonne transcription sur etat.page
+      syncAffichageTousModes()
+      // Activer la synchro et aligner le viewer sur la page courante
+      window.dispatchEvent(new CustomEvent('clover:sync-enabled'))
+      window.dispatchEvent(new CustomEvent('clover:goto', { detail: { index: etat.page } }))
     }
 
     sessionStorage.setItem('livreMode', mode)
   }
 
+
   function gererAncreUrl() {
     const hash = window.location.hash?.slice(1)
-    if (hash) allerAuPassage(hash)
+    if (!hash) return
+    // Un lien direct vers un passage s'ouvre toujours en mode côte-à-côte
+    setMode('cote')
+    // Laisser le temps au viewer de se placer dans son slot avant de scroller
+    setTimeout(() => allerAuPassage(hash), 300)
   }
 
   // ── Init ─────────────────────────────────────────────────────────────────────
   window.addEventListener('DOMContentLoaded', () => {
     afficherPage('onglets', 0)
-    afficherPage('cote', 0)
+    syncAffichageTousModes()
 
     setTimeout(() => {
-      const modeSauvegarde = sessionStorage.getItem('livreMode')
-      setMode(modeSauvegarde === 'cote' ? 'cote' : 'onglets')
-      setTimeout(gererAncreUrl, 200)
+      const hash = window.location.hash?.slice(1)
+      if (hash) {
+        // URL avec ancre : toujours ouvrir en côte-à-côte
+        gererAncreUrl()
+      } else {
+        // Pas d'ancre : respecter la préférence sauvegardée, défaut = côte-à-côte
+        const modeSauvegarde = sessionStorage.getItem('livreMode')
+        setMode(modeSauvegarde === 'onglets' ? 'onglets' : 'cote')
+      }
     }, 100)
   })
 
@@ -456,7 +494,6 @@ const nbPages = livre.transcriptionPages.length
   window.allerAuPassage  = allerAuPassage
   window.copierUrl       = copierUrl
 </script>
-
 <style>
   .livre-entete {
     background: var(--md-surface);
@@ -524,9 +561,9 @@ const nbPages = livre.transcriptionPages.length
     border-right: 1px solid var(--md-divider);
   }
 
-  .mode-btn:last-child       { border-right: none; }
-  .mode-btn .material-icons  { font-size: 18px; }
-  .mode-btn.actif            { background: var(--md-primary); color: var(--md-on-primary); }
+  .mode-btn:last-child        { border-right: none; }
+  .mode-btn .material-icons   { font-size: 18px; }
+  .mode-btn.actif             { background: var(--md-primary); color: var(--md-on-primary); }
   .mode-btn:not(.actif):hover { background: rgba(26,35,126,0.06); color: var(--md-primary); }
 
   .livre-corps { margin-bottom: 32px; }
@@ -536,7 +573,20 @@ const nbPages = livre.transcriptionPages.length
   .mode-cote    #section-onglets { display: none; }
   .mode-cote    #section-cote    { display: grid; }
 
+  /* ── Slots viewer ───────────────────────────────────────────────────────────
+   * Le composant Clover utilise canvasHeight: '100%' → le slot DOIT avoir
+   * une hauteur explicite. On utilise la même valeur (70vh) pour les deux
+   * modes afin d'aligner viewer et transcription en côte-à-côte.
+   */
   .viewer-slot { width: 100%; }
+
+  .viewer-slot-onglets,
+  .viewer-slot-cote {
+    height: 70vh;
+    min-height: 500px;
+    /* Clover a besoin d'un contexte de positionnement pour canvasHeight auto */
+    position: relative;
+  }
 
   .section-onglets-nav {
     display: flex;
@@ -601,7 +651,7 @@ const nbPages = livre.transcriptionPages.length
   .nav-page-btn:disabled { color: var(--md-on-surface-medium); cursor: default; opacity: 0.45; }
 
   .nav-page-btn.invisible {
-    visibility: hidden;   /* occupe l'espace, mais invisible — boutons bas toujours alignés */
+    visibility: hidden;
     pointer-events: none;
   }
 
@@ -640,17 +690,13 @@ const nbPages = livre.transcriptionPages.length
     white-space: nowrap;
   }
 
-  /* ── Layout flex du conteneur de transcription ──────────────────────────────
-   *
-   * Structure :
-   *   .transcription-conteneur  (flex-column, hauteur fixe en mode côte-à-côte)
-   *     ├── .transcription-nav       (flex-shrink: 0 — hauteur fixe)
-   *     ├── .transcription-scroll    (flex: 1, overflow-y: auto — zone scrollable)
-   *     └── .transcription-nav-bas   (flex-shrink: 0 — hauteur fixe, toujours visible)
-   *
-   * En mode onglets, .transcription-conteneur n'a pas de hauteur fixe :
-   * le scroll est géré par la page entière.
-   * En mode côte-à-côte, --fixe impose la même hauteur que le viewer (70vh).
+  /* ── Conteneur transcription flex-column ─────────────────────────────────────
+   * ┌─ .transcription-conteneur ──────────────────────┐
+   * │  .transcription-nav      (fixe, flex-shrink:0)  │
+   * │  .transcription-scroll   (flex:1, overflow:auto) │
+   * │  .transcription-nav-bas  (fixe, flex-shrink:0)  │
+   * └──────────────────────────────────────────────────┘
+   * --fixe : même hauteur que le viewer en mode côte-à-côte
    */
   .transcription-conteneur {
     display: flex;
@@ -666,11 +712,9 @@ const nbPages = livre.transcriptionPages.length
     flex: 1;
     overflow-y: auto;
     padding: 24px;
-    /* Hauteur minimale en mode onglets pour éviter un conteneur trop petit */
     min-height: 200px;
   }
 
-  /* ── Navigation bas (toujours visible, hors zone scrollable) ── */
   .transcription-nav-bas {
     display: flex;
     align-items: center;
@@ -686,7 +730,6 @@ const nbPages = livre.transcriptionPages.length
     color: var(--md-on-surface-medium);
   }
 
-  /* ── Badge synchro (en-tête de la colonne viewer) ── */
   .cote-sync-badge {
     display: inline-flex;
     align-items: center;
@@ -717,7 +760,7 @@ const nbPages = livre.transcriptionPages.length
 
   :global(*:hover > .transcription-ancre),
   :global(.transcription-ancre:focus) { opacity: 0.6; }
-  :global(.transcription-ancre:hover)  { opacity: 1; }
+  :global(.transcription-ancre:hover) { opacity: 1; }
 
   :global(.transcription-ancre-cible) { animation: pulse-ancre 1.8s ease-out; }
 
@@ -794,7 +837,7 @@ const nbPages = livre.transcriptionPages.length
 
   @media (max-width: 900px) { .cote-wrapper { grid-template-columns: 1fr; } }
 
-  .cote-colonne { display: flex; flex-direction: column; overflow: hidden; }
+  .cote-colonne               { display: flex; flex-direction: column; overflow: hidden; }
   .cote-transcription-colonne { display: flex; flex-direction: column; }
 
   .cote-entete {
@@ -814,7 +857,6 @@ const nbPages = livre.transcriptionPages.length
 
   .cote-entete .material-icons { font-size: 18px; }
 
-  /* ── Pages ── */
   .transcription-page        { display: none; }
   .transcription-page.active { display: block; }
   .transcription-page-entete { margin-bottom: 16px; }

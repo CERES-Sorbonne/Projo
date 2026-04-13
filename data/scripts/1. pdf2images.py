@@ -3,16 +3,15 @@
 pdf_vers_images.py
 ==================
 Convertit chaque PDF du dossier pdfs/ en images JPEG, une par page.
-Les images sont prêtes à être déposées sur Nakala, qui génèrera
-lui-même le manifeste IIIF.
+Les images sont prêtes à être déposées sur Nakala
 
 Usage :
     cd data/
-    python scripts/pdf_vers_images.py
+    uv run scripts/1. pdf_vers_images.py
 
     # Options :
-    python scripts/pdf_vers_images.py --dpi 300 --qualite 90
-    python scripts/pdf_vers_images.py --pdf pdfs/1.pdf   # un seul fichier
+    uv run scripts/1. pdf_vers_images.py --dpi 300 --qualite 90
+    uv run scripts/1. pdf_vers_images.py --pdf pdfs/1.pdf   # un seul fichier
 
 Prérequis :
     pip install pdf2image Pillow
@@ -36,11 +35,6 @@ Structure générée :
             2/
                 page-001.jpg
                 ...
-
-Workflow Nakala ensuite :
-    1. Déposer le dossier images/[id]/ sur Nakala
-    2. Créer le manifeste IIIF depuis l'interface Nakala
-    3. Copier l'URL du manifeste dans metadata.csv (colonne manifeste_url)
 """
 
 import argparse

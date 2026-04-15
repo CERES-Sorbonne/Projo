@@ -3,8 +3,8 @@ from lxml import etree
 
 # ── Configuration ────────────────────────────────────────────
 # the path containing the churro xml to merge
-INPUT_DIR = Path("/home/ceres/Documents/Code/ExperiencesOCR/output_pdf_espiegle")
-FINAL_FILE = Path("./data/transcriptions/Livre-01.xml")
+INPUT_DIR = Path("/home/ceres/Documents/Code/ExperiencesOCR/AgreablesDivertissements")
+FINAL_FILE = Path("./data/transcriptions/nkl.c6ceava6.xml")
 NS = "http://example.com/historicaldocument"
 # ─────────────────────────────────────────────────────────────
 

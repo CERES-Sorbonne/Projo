@@ -77,6 +77,7 @@ const historicalRules: XmlRuleMap = {
                         }) },
   stamp:              { tag: 'span',   classe: 'transcription-stamp',
                         attrs: (n) => ({ title: String(n['@_description'] ?? '') }) },
+  italic:             { tag: 'i'}
 }
 
 // ─── Registre des schémas ─────────────────────────────────────────────────────

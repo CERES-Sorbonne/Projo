@@ -4,7 +4,7 @@
 * - Gestion des expressions multi-mots (ex: "Comme celui")
 */
 import { useState, useMemo, useEffect } from 'react'
-import MiniSearch from 'minisearch' // Remplacement de Fuse
+import * as fuzzySearch from '@m31coding/fuzzy-search'
 
 // ─── Composants de facettes (Inchangés) ──────────────────────────────────────
 
@@ -70,61 +70,32 @@ function FacetteTexte({ meta, valeurActive, onChange }) {
 * Extrait un passage de contexte.
 * Reçoit maintenant directement les indices calculés.
 */
-function ExtraitTranscription({ texte, indices }) {
-  if (!texte || !indices?.length) return null
+function ExtraitTranscription({ texte, requete }) {
+  if (!texte || !requete?.trim()) return null
 
-  // On définit la fenêtre autour du premier match
-  const FENETRE = 80
-  const premierMatch = indices[0][0]
-  const dernierMatch = indices[indices.length - 1][1]
+  const mots = requete.trim().split(/\s+/).filter(Boolean)
+  const pattern = mots.map(m => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  const regex = new RegExp(`(${pattern})`, 'gi')
+  const parties = texte.split(regex)
 
-  const start = Math.max(0, premierMatch - FENETRE)
-  const end = Math.min(texte.length, dernierMatch + FENETRE)
-
-  const extrait = texte.slice(start, end)
-  const decalage = start
-
-  // Fonction pour reconstruire le texte avec les balises <mark>
-  const renduSurligne = () => {
-    let dernierIndex = 0
-    const elements = []
-
-    indices.forEach(([debut, fin], i) => {
-      // On ajuste les indices par rapport au début de l'extrait (decalage)
-      const relDebut = debut - decalage
-      const relFin = fin - decalage + 1
-
-      // Si le match est en dehors de la fenêtre d'affichage, on l'ignore
-      if (relDebut < 0 || relDebut > extrait.length) return
-
-      // Texte avant le mot surligné
-      elements.push(extrait.slice(dernierIndex, relDebut))
-      // Le mot surligné
-      elements.push(
-        <mark key={i} className="extrait-mark">
-          {extrait.slice(relDebut, relFin)}
-        </mark>
-      )
-      dernierIndex = relFin
-    })
-
-    // Reste du texte après le dernier surlignage
-    elements.push(extrait.slice(dernierIndex))
-    return elements
-  }
+  const aUnMatch = parties.some((p, i) => i % 2 === 1)
+  // if (!aUnMatch) return null   // ← ne pas afficher l'extrait si rien n'est surligné
 
   return (
     <div className="extrait-transcription">
       <span className="material-icons extrait-icone">format_quote</span>
       <p className="extrait-texte">
-        {start > 0 && <span className="extrait-ellipse">…</span>}
-        {renduSurligne()}
-        {end < texte.length && <span className="extrait-ellipse">…</span>}
+        <span className="extrait-ellipse">…</span>
+        {parties.map((part, i) =>
+          i % 2 === 1
+            ? <mark key={i} className="extrait-mark">{part}</mark>
+            : part
+        )}
+        <span className="extrait-ellipse">…</span>
       </p>
     </div>
   )
 }
-
 // ─── Carte résultat ───────────────────────────────────────────────────────────
 
 function estFiltreActif(meta, livre, filtres) {
@@ -138,16 +109,14 @@ function estFiltreActif(meta, livre, filtres) {
   return false
 }
 
-function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
+function CarteResultat({ livre, colonnesMeta, filtresActifs, recherche }) {
   const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
-  const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', '_transcriptionTexte', '_indicesMatch'])
+  const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', '_extrait'])
   const metaSupp = colonnesMeta.filter(m => !RESERVEES.has(m.key))
-
-  // On vérifie si on a des indices de match pour la transcription
-  const indicesMatch = livre._indicesMatch
+  const extrait = livre._extrait
 
   return (
-    <a href={`/livres/${livre.id}`} className={`carte-resultat${indicesMatch ? ' carte-resultat--transcription' : ''}`}>
+    <a href={`/livres/${livre.id}`} className={`carte-resultat${extrait ? ' carte-resultat--transcription' : ''}`}>
       <div className="carte-resultat-icone">
         <span className="material-icons">menu_book</span>
       </div>
@@ -161,20 +130,14 @@ function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
               <strong>{m.label}</strong>&nbsp;{String(livre[m.key] ?? '')}
             </span>
           ))}
-          {indicesMatch && (
+          {extrait && (
             <span className="chip chip--actif">
               <span className="material-icons" style={{ fontSize: '13px' }}>history_edu</span>
               Trouvé dans la transcription
             </span>
           )}
         </div>
-
-        {indicesMatch && (
-          <ExtraitTranscription
-            texte={livre._transcriptionTexte}
-            indices={indicesMatch}
-          />
-        )}
+        {extrait && <ExtraitTranscription texte={extrait} requete={recherche} />}
       </div>
       <span className="material-icons carte-resultat-fleche">chevron_right</span>
     </a>
@@ -183,7 +146,7 @@ function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
 
 // ─── Moteur principal ─────────────────────────────────────────────────────────
 
-export default function MoteurFacettes({ livres, colonnesMeta }) {
+export default function MoteurFacettes({ livres, chunksParLivre, colonnesMeta }) {
   const [recherche, setRecherche] = useState('')
   const [filtres, setFiltres] = useState({})
 
@@ -197,8 +160,33 @@ export default function MoteurFacettes({ livres, colonnesMeta }) {
     setFiltres({})
   }
 
+
+  // ── Index construit une seule fois ──
+  const { indexMeta, indexChunks } = useMemo(() => {
+    const indexMeta = fuzzySearch.SearcherFactory.createDefaultSearcher()
+    indexMeta.indexEntities(
+      livres,
+      e => e.id,
+      e => [e.titre ?? '', e.sous_titre ?? '',
+      Array.isArray(e.auteur) ? e.auteur.join(' ') : (e.auteur ?? '')]
+    )
+
+    const indexChunks = fuzzySearch.SearcherFactory.createDefaultSearcher()
+    const tousChunks = Object.entries(chunksParLivre).flatMap(([livreId, chunks]) =>
+      chunks.map((c, i) => ({ _id: `${livreId}__${i}`, livreId, texte: c.texte }))
+    )
+    indexChunks.indexEntities(
+      tousChunks,
+      e => e._id,
+      e => [e.texte]
+    )
+
+    return { indexMeta, indexChunks }
+  }, [livres, chunksParLivre])
+
+
+  // ── Recherche réactive (légère, index déjà construit) ──
   const resultats = useMemo(() => {
-    // 1. Appliquer les filtres facettes sur tous les livres
     const livresFiltres = livres.filter(livre => {
       return colonnesMeta.every(meta => {
         const filtre = filtres[meta.key]
@@ -223,51 +211,48 @@ export default function MoteurFacettes({ livres, colonnesMeta }) {
       })
     })
 
-    // 2. Si pas de recherche texte, retourner les livres filtrés
-    if (!recherche.trim()) return livresFiltres.map(l => ({ ...l, _indicesMatch: null }))
+    if (!recherche.trim()) return livresFiltres.map(l => ({ ...l, _extrait: null }))
 
-    // 3. MiniSearch uniquement sur les livres déjà filtrés
-    const miniSearchLocal = new MiniSearch({
-      fields: ['titre', 'sous_titre', 'auteur', '_transcriptionTexte'],
-      storeFields: ['id', 'titre', 'sous_titre', 'auteur', '_transcriptionTexte'],
-      searchOptions: { fuzzy: 0.2, prefix: true, combineWith: 'AND' }
-    })
-    miniSearchLocal.addAll(livresFiltres)
+    const idsFiltres = new Set(livresFiltres.map(l => l.id))
 
-    const msResultats = miniSearchLocal.search(recherche)
-    const termesRecherche = recherche.toLowerCase().trim().split(/\s+/)
+    // Recherche dans les métadonnées
+    // Recherche meta
+    const hitsMeta = new Set(
+      indexMeta.getMatches(new fuzzySearch.Query(recherche, Infinity))
+        .matches.map(m => m.entity.id)
+        .filter(id => idsFiltres.has(id))
+    )
 
-    return msResultats.map(r => {
-      const livreOriginal = livresFiltres.find(l => l.id === r.id)
-      if (!livreOriginal) return null
+    // Recherche chunks — topN élevé pour avoir tous les chunks qui matchent
+    const hitsChunks = indexChunks.getMatches(
+      new fuzzySearch.Query(recherche, Infinity, [
+        new fuzzySearch.SubstringSearcher(0),   // substring exact en priorité
+        // new fuzzySearch.PrefixSearcher(0),      // prefix
+        new fuzzySearch.FuzzySearcher(0.2),     // fuzzy pour les variantes
+      ])
+    ).matches
+    console.log(hitsChunks)
+    const extraitsParLivre = new Map()
 
-      if (!r._transcriptionTexte) return { ...livreOriginal, _indicesMatch: null }
-
-      const pattern = termesRecherche
-        .map(t => `\\b${t.slice(0, -1)}[a-z]{1,2}`)
-        .join('\\s+')
-
-      let indicesMatch = []
-      try {
-        const regex = new RegExp(pattern, 'gi')
-        let match
-        while ((match = regex.exec(r._transcriptionTexte)) !== null) {
-          indicesMatch.push([match.index, match.index + match[0].length - 1])
-        }
-      } catch (e) { return null }
-
-      if (indicesMatch.length > 0) {
-        return { ...livreOriginal, _indicesMatch: indicesMatch }
+    for (const hit of hitsChunks) {
+      const { livreId, texte } = hit.entity
+      if (!idsFiltres.has(livreId)) continue
+      if (!extraitsParLivre.has(livreId)) {
+        extraitsParLivre.set(livreId, texte)
       }
+    }
 
-      const matchHorsTranscription = Object.keys(r.match).some(k => k !== '_transcriptionTexte')
-      if (matchHorsTranscription) {
-        return { ...livreOriginal, _indicesMatch: null }
-      }
+    // Fusionner : livres trouvés dans meta OU dans chunks
+    const tousIds = new Set([...hitsMeta, ...extraitsParLivre.keys()])
 
-      return null
-    }).filter(Boolean)
-  }, [recherche, filtres, livres, colonnesMeta])
+    return [...tousIds]
+      .map(id => {
+        const livre = livresFiltres.find(l => l.id === id)
+        if (!livre) return null
+        return { ...livre, _extrait: extraitsParLivre.get(id) ?? null }
+      })
+      .filter(Boolean)
+  }, [recherche, filtres, livres, colonnesMeta, indexMeta, indexChunks])
 
   const nbFiltresActifs = Object.values(filtres).filter(v =>
     v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)
@@ -326,7 +311,13 @@ export default function MoteurFacettes({ livres, colonnesMeta }) {
           ) : (
             <div className="resultats-liste">
               {resultats.map(livre => (
-                <CarteResultat key={livre.id} livre={livre} colonnesMeta={colonnesMeta} filtresActifs={filtres} />
+                <CarteResultat
+                  key={livre.id}
+                  livre={livre}
+                  colonnesMeta={colonnesMeta}
+                  filtresActifs={filtres}
+                  recherche={recherche}   // ← ajouter
+                />
               ))}
             </div>
           )}

@@ -11,6 +11,7 @@
     "@astrojs/react": "^4.2.0",
     "@emotion/react": "^11.0.0",
     "@emotion/styled": "^11.0.0",
+    "@m31coding/fuzzy-search": "^2.0.0",
     "@mui/material": "^7.0.0",
     "@samvera/clover-iiif": "^3.4.0",
     "astro": "^5.0.0",

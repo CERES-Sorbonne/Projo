@@ -40,6 +40,13 @@ export interface LivreAvecTranscription extends Livre {
   transcriptionPages: TranscriptionPage[]
 }
 
+export interface TranscriptionChunk {
+  id: string
+  livreId: string
+  pageN: string | number
+  texte: string
+}
+
 export interface TranscriptionPage {
   n: string | number
   html: string
@@ -301,6 +308,37 @@ export function getLivres(): Livre[] {
       ? ligne.auteur.split(';').map(a => a.trim())
       : ligne.auteur,
   })) as Livre[]
+}
+
+/** Découpe les transcriptions en chunks de ~300 chars avec chevauchement de 80 chars */
+export function getChunksTranscription(livreId: string): TranscriptionChunk[] {
+  const livre = getLivreAvecTranscription(livreId)
+  if (!livre) return []
+
+  const TAILLE = 300
+  const CHEVAUCHEMENT = 80
+  const chunks: TranscriptionChunk[] = []
+
+  for (const page of livre.transcriptionPages) {
+    // Texte brut de la page (sans balises HTML)
+    const texte = page.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!texte) continue
+
+    let debut = 0
+    let i = 0
+    while (debut < texte.length) {
+      const fin = Math.min(debut + TAILLE, texte.length)
+      chunks.push({
+        id: `${livreId}__${page.n}__${i}`,
+        livreId,
+        pageN: page.n,
+        texte: texte.slice(debut, fin),
+      })
+      debut += TAILLE - CHEVAUCHEMENT
+      i++
+    }
+  }
+  return chunks
 }
 
 export function getLivreAvecTranscription(id: string): LivreAvecTranscription | null {

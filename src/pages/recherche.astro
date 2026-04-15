@@ -1,29 +1,18 @@
 ---
 import Base from '../layouts/Base.astro'
 import MoteurFacettes from '../components/MoteurFacettes.jsx'
-import { getLivres, getColonnesMeta, getLivreAvecTranscription } from '../lib/parseData'
+import { getLivres, getColonnesMeta, getChunksTranscription } from '../lib/parseData'
 
 const livres = getLivres()
 const colonnesMeta = getColonnesMeta(livres)
 
-// Ajouter le texte brut des transcriptions pour la recherche plein texte
-const livresAvecTranscription = livres.map(livre => {
-  const detail = getLivreAvecTranscription(livre.id)
-  const texteComplet = detail?.transcriptionPages
-    .map(p => p.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
-    .join(' ') ?? ''
+// Chunks indexés séparément, groupés par livreId
+const chunksParLivre: Record<string, { pageN: string|number, texte: string }[]> = {}
+for (const livre of livres) {
+  chunksParLivre[livre.id] = getChunksTranscription(livre.id)
+    .map(c => ({ pageN: c.pageN, texte: c.texte }))
+}
 
-  return {
-    ...livre,
-    _transcriptionTexte: texteComplet,
-    // Chunks de ~200 chars pour que Fuse puisse chercher dedans
-    _transcriptionChunks: texteComplet
-      .split(/[.!?;]+/)
-      .map(s => s.trim())
-      .filter(s => s.length > 20),
-  }
-})
-const livresJson = JSON.stringify(livresAvecTranscription)
 const colonnesJson = JSON.stringify(colonnesMeta)
 ---
 <!-- reste identique -->
@@ -40,7 +29,8 @@ const colonnesJson = JSON.stringify(colonnesMeta)
     </div>
 
     <MoteurFacettes
-      livres={JSON.parse(livresJson)}
+      livres={livres}
+      chunksParLivre={chunksParLivre}
       colonnesMeta={JSON.parse(colonnesJson)}
       client:load
     />

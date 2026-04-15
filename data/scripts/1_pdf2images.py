@@ -79,11 +79,9 @@ def verifier_dependances():
 # ─── Conversion d'un PDF ──────────────────────────────────────────────────────
 
 def convertir_pdf(pdf_path: Path, dpi: int, qualite: int) -> int:
-    """
-    Convertit un PDF en images JPEG dans data/images/[stem]/.
-    Retourne le nombre de pages converties.
-    """
     from pdf2image import convert_from_path
+    from pdf2image.exceptions import PDFPageCountError
+    import subprocess
 
     livre_id = pdf_path.stem
     dossier_sortie = DIR_IMAGES / livre_id
@@ -92,27 +90,49 @@ def convertir_pdf(pdf_path: Path, dpi: int, qualite: int) -> int:
     print(f"\n📄 {pdf_path.name}")
     print(f"   → {dossier_sortie}/")
 
+    # Compter les pages sans charger le PDF entier
     try:
-        pages = convert_from_path(str(pdf_path), dpi=dpi)
+        result = subprocess.run(
+            ["pdfinfo", str(pdf_path)], capture_output=True, text=True, check=True
+        )
+        nb_pages = int(next(
+            l.split(":")[1].strip()
+            for l in result.stdout.splitlines()
+            if l.startswith("Pages:")
+        ))
     except Exception as e:
-        print(f"   ❌ Erreur de conversion : {e}")
+        print(f"   ❌ Impossible de lire le nombre de pages : {e}")
         return 0
 
-    for i, page in enumerate(pages, start=1):
+    print(f"   {nb_pages} page(s) détectée(s)")
+
+    nb_converties = 0
+    for i in range(1, nb_pages + 1):
         nom = f"page-{i:03d}.jpg"
         chemin = dossier_sortie / nom
 
-        # Forcer RGB (les PDFs peuvent avoir des canaux alpha)
-        if page.mode != "RGB":
-            page = page.convert("RGB")
+        try:
+            pages = convert_from_path(
+                str(pdf_path), dpi=dpi,
+                first_page=i, last_page=i
+            )
+            if not pages:
+                continue
+            page = pages[0]
+            if page.mode != "RGB":
+                page = page.convert("RGB")
+            page.save(str(chemin), "JPEG", quality=qualite, optimize=True)
+            taille_ko = chemin.stat().st_size // 1024
+            print(f"   ✓ {nom}  {page.width}×{page.height}px  {taille_ko} Ko")
+            nb_converties += 1
+            # Libérer explicitement la mémoire
+            del pages, page
+        except Exception as e:
+            print(f"   ❌ Page {i} : {e}")
 
-        page.save(str(chemin), "JPEG", quality=qualite, optimize=True)
-        taille_ko = chemin.stat().st_size // 1024
-        print(f"   ✓ {nom}  {page.width}×{page.height}px  {taille_ko} Ko")
-
-    print(f"   ✅ {len(pages)} page(s) extraite(s)")
-    return len(pages)
-
+    print(f"   ✅ {nb_converties}/{nb_pages} page(s) extraite(s)")
+    return nb_converties
+    
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():

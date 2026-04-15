@@ -1,7 +1,5 @@
 /**
 * MoteurFacettes.jsx
-* - MiniSearch remplace Fuse.js pour un fuzzy matching par mot plus précis
-* - Gestion des expressions multi-mots (ex: "Comme celui")
 */
 import { useState, useMemo, useEffect } from 'react'
 import * as fuzzySearch from '@m31coding/fuzzy-search'
@@ -70,16 +68,21 @@ function FacetteTexte({ meta, valeurActive, onChange }) {
 * Extrait un passage de contexte.
 * Reçoit maintenant directement les indices calculés.
 */
-function ExtraitTranscription({ texte, requete }) {
-  if (!texte || !requete?.trim()) return null
+function ExtraitTranscription({ texte, motsMatches }) {
+  if (!texte || !motsMatches || motsMatches.length === 0) return null
 
-  const mots = requete.trim().split(/\s+/).filter(Boolean)
-  const pattern = mots.map(m => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+  // Création d'une regex qui matche tous les mots trouvés par l'index flou
+  // On les trie par longueur décroissante pour éviter que "chat" ne coupe "château"
+  const pattern = motsMatches
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map(m => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+    
+  if (!pattern) return <p className="extrait-texte">{texte}</p>
+
   const regex = new RegExp(`(${pattern})`, 'gi')
   const parties = texte.split(regex)
-
-  const aUnMatch = parties.some((p, i) => i % 2 === 1)
-  // if (!aUnMatch) return null   // ← ne pas afficher l'extrait si rien n'est surligné
 
   return (
     <div className="extrait-transcription">
@@ -87,7 +90,7 @@ function ExtraitTranscription({ texte, requete }) {
       <p className="extrait-texte">
         <span className="extrait-ellipse">…</span>
         {parties.map((part, i) =>
-          i % 2 === 1
+          regex.test(part)
             ? <mark key={i} className="extrait-mark">{part}</mark>
             : part
         )}
@@ -109,150 +112,162 @@ function estFiltreActif(meta, livre, filtres) {
   return false
 }
 
-function CarteResultat({ livre, colonnesMeta, filtresActifs, recherche }) {
+function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
   const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
-  const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', '_extrait'])
+  // On exclut les clés techniques pour ne pas les afficher en chips
+  const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', '_extraits', '_motsMatches'])
   const metaSupp = colonnesMeta.filter(m => !RESERVEES.has(m.key))
-  const extrait = livre._extrait
+  
+  const extraits = livre._extraits || []
+  const motsMatches = livre._motsMatches || []
 
   return (
-    <a href={`/livres/${livre.id}`} className={`carte-resultat${extrait ? ' carte-resultat--transcription' : ''}`}>
-      <div className="carte-resultat-icone">
-        <span className="material-icons">menu_book</span>
-      </div>
-      <div className="carte-resultat-info">
-        <h3 className="carte-resultat-titre">{livre.titre}</h3>
-        {livre.sous_titre && <p className="carte-resultat-sous-titre">{livre.sous_titre}</p>}
-        <p className="carte-resultat-auteur">{auteurs}</p>
+    <div className={`carte-resultat${extraits.length > 0 ? ' carte-resultat--transcription' : ''}`}>
+      {/* Partie Haute : Lien vers le livre */}
+      <a href={`/livres/${livre.id}`} className="carte-resultat-lien-titre">
+        <div className="carte-resultat-icone">
+          <span className="material-icons">menu_book</span>
+        </div>
+        <div className="carte-resultat-info">
+          <h3 className="carte-resultat-titre">{livre.titre}</h3>
+          {livre.sous_titre && <p className="carte-resultat-sous-titre">{livre.sous_titre}</p>}
+          <p className="carte-resultat-auteur">{auteurs}</p>
+        </div>
+        <span className="material-icons carte-resultat-fleche">chevron_right</span>
+      </a>
+
+      {/* Partie Basse : Métadonnées et Extraits */}
+      <div className="carte-resultat-details">
         <div className="carte-resultat-chips">
-          {metaSupp.map(m => (
-            <span key={m.key} className={`chip${estFiltreActif(m, livre, filtresActifs) ? ' chip--actif' : ''}`}>
-              <strong>{m.label}</strong>&nbsp;{String(livre[m.key] ?? '')}
-            </span>
-          ))}
-          {extrait && (
+          {metaSupp.map(m => {
+            const actif = estFiltreActif(m, livre, filtresActifs);
+            return (
+              <span key={m.key} className={`chip${actif ? ' chip--actif' : ''}`}>
+                <strong>{m.label}</strong>&nbsp;{String(livre[m.key] ?? '')}
+              </span>
+            );
+          })}
+          
+          {/* Chip spécial si on a trouvé des occurrences dans la transcription */}
+          {extraits.length > 0 && (
             <span className="chip chip--actif">
               <span className="material-icons" style={{ fontSize: '13px' }}>history_edu</span>
-              Trouvé dans la transcription
+              {extraits.length} passage{extraits.length > 1 ? 's' : ''} trouvé{extraits.length > 1 ? 's' : ''}
             </span>
           )}
         </div>
-        {extrait && <ExtraitTranscription texte={extrait} requete={recherche} />}
+
+        {extraits.length > 0 && (
+          <div className="extraits-container">
+            {extraits.map((texte, idx) => (
+              <ExtraitTranscription key={idx} texte={texte} motsMatches={motsMatches} />
+            ))}
+          </div>
+        )}
       </div>
-      <span className="material-icons carte-resultat-fleche">chevron_right</span>
-    </a>
+    </div>
   )
 }
-
 // ─── Moteur principal ─────────────────────────────────────────────────────────
 
 export default function MoteurFacettes({ livres, chunksParLivre, colonnesMeta }) {
   const [recherche, setRecherche] = useState('')
   const [filtres, setFiltres] = useState({})
 
+  const majFiltres = (key, valeur) => setFiltres(prev => ({ ...prev, [key]: valeur }))
+  const reinitialiser = () => { setRecherche(''); setFiltres({}); }
 
-  const majFiltres = (key, valeur) => {
-    setFiltres(prev => ({ ...prev, [key]: valeur }))
-  }
+  // Indexation par mots (optimisée)
+  const { indexMeta, indexMots, mapMotsVersChunks } = useMemo(() => {
+    const iMeta = fuzzySearch.SearcherFactory.createDefaultSearcher()
+    iMeta.indexEntities(livres, e => e.id, e => [e.titre ?? '', e.sous_titre ?? '', Array.isArray(e.auteur) ? e.auteur.join(' ') : (e.auteur ?? '')])
 
-  const reinitialiser = () => {
-    setRecherche('')
-    setFiltres({})
-  }
+    const mapMots = new Map()
+    Object.entries(chunksParLivre).forEach(([livreId, chunks]) => {
+      chunks.forEach(chunk => {
+        const mots = chunk.texte.toLowerCase().split(/[\s,.;:!?()'"«»]+/).filter(m => m.length > 2)
+        new Set(mots).forEach(mot => {
+          if (!mapMots.has(mot)) mapMots.set(mot, [])
+          mapMots.get(mot).push({ livreId, texte: chunk.texte })
+        })
+      })
+    })
 
+    const iMots = fuzzySearch.SearcherFactory.createDefaultSearcher()
+    const entitesMots = Array.from(mapMots.keys()).map(m => ({ mot: m }))
+    iMots.indexEntities(entitesMots, e => e.mot, e => [e.mot])
 
-  // ── Index construit une seule fois ──
-  const { indexMeta, indexChunks } = useMemo(() => {
-    const indexMeta = fuzzySearch.SearcherFactory.createDefaultSearcher()
-    indexMeta.indexEntities(
-      livres,
-      e => e.id,
-      e => [e.titre ?? '', e.sous_titre ?? '',
-      Array.isArray(e.auteur) ? e.auteur.join(' ') : (e.auteur ?? '')]
-    )
-
-    const indexChunks = fuzzySearch.SearcherFactory.createDefaultSearcher()
-    const tousChunks = Object.entries(chunksParLivre).flatMap(([livreId, chunks]) =>
-      chunks.map((c, i) => ({ _id: `${livreId}__${i}`, livreId, texte: c.texte }))
-    )
-    indexChunks.indexEntities(
-      tousChunks,
-      e => e._id,
-      e => [e.texte]
-    )
-
-    return { indexMeta, indexChunks }
+    return { indexMeta: iMeta, indexMots: iMots, mapMotsVersChunks: mapMots }
   }, [livres, chunksParLivre])
 
-
-  // ── Recherche réactive (légère, index déjà construit) ──
   const resultats = useMemo(() => {
+    // 1. Filtrage facettes
     const livresFiltres = livres.filter(livre => {
       return colonnesMeta.every(meta => {
         const filtre = filtres[meta.key]
-        if (filtre === null || filtre === undefined) return true
-
+        if (!filtre || (Array.isArray(filtre) && filtre.length === 0)) return true
         const valeur = String(livre[meta.key] ?? '')
-
-        if (meta.type === 'select') {
-          if (!Array.isArray(filtre) || filtre.length === 0) return true
-          return filtre.includes(valeur)
-        }
-        if (meta.type === 'range') {
-          if (!Array.isArray(filtre)) return true
-          const nb = Number(valeur)
-          return nb >= filtre[0] && nb <= filtre[1]
-        }
-        if (meta.type === 'text') {
-          if (!filtre) return true
-          return valeur.toLowerCase().includes(String(filtre).toLowerCase())
-        }
+        if (meta.type === 'select') return filtre.includes(valeur)
+        if (meta.type === 'range') return Number(valeur) >= filtre[0] && Number(valeur) <= filtre[1]
+        if (meta.type === 'text') return valeur.toLowerCase().includes(String(filtre).toLowerCase())
         return true
       })
     })
 
-    if (!recherche.trim()) return livresFiltres.map(l => ({ ...l, _extrait: null }))
+    if (!recherche.trim()) return livresFiltres.map(l => ({ ...l, _extraits: [] }))
 
     const idsFiltres = new Set(livresFiltres.map(l => l.id))
-
-    // Recherche dans les métadonnées
-    // Recherche meta
+    
+    // 2. Recherche Meta
     const hitsMeta = new Set(
       indexMeta.getMatches(new fuzzySearch.Query(recherche, Infinity))
         .matches.map(m => m.entity.id)
         .filter(id => idsFiltres.has(id))
     )
 
-    // Recherche chunks — topN élevé pour avoir tous les chunks qui matchent
-    const hitsChunks = indexChunks.getMatches(
+    // 3. Recherche Mots floue
+    const hitsMots = indexMots.getMatches(
       new fuzzySearch.Query(recherche, Infinity, [
-        new fuzzySearch.SubstringSearcher(0),   // substring exact en priorité
-        // new fuzzySearch.PrefixSearcher(0),      // prefix
-        new fuzzySearch.FuzzySearcher(0.2),     // fuzzy pour les variantes
+        new fuzzySearch.SubstringSearcher(0),
+        new fuzzySearch.FuzzySearcher(0.2)
       ])
     ).matches
-    console.log(hitsChunks)
-    const extraitsParLivre = new Map()
 
-    for (const hit of hitsChunks) {
-      const { livreId, texte } = hit.entity
-      if (!idsFiltres.has(livreId)) continue
-      if (!extraitsParLivre.has(livreId)) {
-        extraitsParLivre.set(livreId, texte)
+    const extraitsParLivre = new Map()
+    const motsMatchesParLivre = new Map() // livreId -> Set de mots trouvés
+
+    for (const hit of hitsMots) {
+      const motTrouve = hit.entity.mot
+      const occurrences = mapMotsVersChunks.get(motTrouve) || []
+
+      for (const occ of occurrences) {
+        if (!idsFiltres.has(occ.livreId)) continue
+
+        // Gestion des extraits (max 5 par livre)
+        if (!extraitsParLivre.has(occ.livreId)) extraitsParLivre.set(occ.livreId, new Set())
+        const eSet = extraitsParLivre.get(occ.livreId)
+        if (eSet.size < 5) eSet.add(occ.texte)
+
+        // Stockage du mot pour le highlight
+        if (!motsMatchesParLivre.has(occ.livreId)) motsMatchesParLivre.set(occ.livreId, new Set())
+        motsMatchesParLivre.get(occ.livreId).add(motTrouve)
       }
     }
 
-    // Fusionner : livres trouvés dans meta OU dans chunks
     const tousIds = new Set([...hitsMeta, ...extraitsParLivre.keys()])
 
     return [...tousIds]
       .map(id => {
         const livre = livresFiltres.find(l => l.id === id)
         if (!livre) return null
-        return { ...livre, _extrait: extraitsParLivre.get(id) ?? null }
+        return {
+          ...livre,
+          _extraits: Array.from(extraitsParLivre.get(id) || []),
+          _motsMatches: Array.from(motsMatchesParLivre.get(id) || [recherche.toLowerCase()])
+        }
       })
       .filter(Boolean)
-  }, [recherche, filtres, livres, colonnesMeta, indexMeta, indexChunks])
+  }, [recherche, filtres, livres, colonnesMeta, indexMeta, indexMots, mapMotsVersChunks])
 
   const nbFiltresActifs = Object.values(filtres).filter(v =>
     v !== null && v !== undefined && !(Array.isArray(v) && v.length === 0)

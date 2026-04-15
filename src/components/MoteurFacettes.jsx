@@ -70,7 +70,6 @@ function FacetteTexte({ meta, valeurActive, onChange }) {
 */
 function ExtraitTranscription({ texte, motsMatches }) {
   if (!texte || !motsMatches || motsMatches.length === 0) return null
-
   // Création d'une regex qui matche tous les mots trouvés par l'index flou
   // On les trie par longueur décroissante pour éviter que "chat" ne coupe "château"
   const pattern = motsMatches
@@ -78,7 +77,8 @@ function ExtraitTranscription({ texte, motsMatches }) {
     .sort((a, b) => b.length - a.length)
     .map(m => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')
-    
+  
+  console.log(pattern, texte)
   if (!pattern) return <p className="extrait-texte">{texte}</p>
 
   const regex = new RegExp(`(${pattern})`, 'gi')
@@ -90,7 +90,7 @@ function ExtraitTranscription({ texte, motsMatches }) {
       <p className="extrait-texte">
         <span className="extrait-ellipse">…</span>
         {parties.map((part, i) =>
-          regex.test(part)
+          new RegExp(`^(${pattern})$`, 'i').test(part)
             ? <mark key={i} className="extrait-mark">{part}</mark>
             : part
         )}
@@ -114,41 +114,36 @@ function estFiltreActif(meta, livre, filtres) {
 
 function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
   const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
-  // On exclut les clés techniques pour ne pas les afficher en chips
   const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', '_extraits', '_motsMatches'])
   const metaSupp = colonnesMeta.filter(m => !RESERVEES.has(m.key))
-  
   const extraits = livre._extraits || []
   const motsMatches = livre._motsMatches || []
 
   return (
     <div className={`carte-resultat${extraits.length > 0 ? ' carte-resultat--transcription' : ''}`}>
-      {/* Partie Haute : Lien vers le livre */}
       <a href={`/livres/${livre.id}`} className="carte-resultat-lien-titre">
-        <div className="carte-resultat-icone">
-          <span className="material-icons">menu_book</span>
+        <div className="carte-resultat-entete">
+          <div className="carte-resultat-icone">
+            <span className="material-icons">menu_book</span>
+          </div>
+          <div className="carte-resultat-info">
+            <h3 className="carte-resultat-titre">{livre.titre}</h3>
+            {livre.sous_titre && <p className="carte-resultat-sous-titre">{livre.sous_titre}</p>}
+            <p className="carte-resultat-auteur">{auteurs}</p>
+          </div>
+          <span className="material-icons carte-resultat-fleche">chevron_right</span>
         </div>
-        <div className="carte-resultat-info">
-          <h3 className="carte-resultat-titre">{livre.titre}</h3>
-          {livre.sous_titre && <p className="carte-resultat-sous-titre">{livre.sous_titre}</p>}
-          <p className="carte-resultat-auteur">{auteurs}</p>
-        </div>
-        <span className="material-icons carte-resultat-fleche">chevron_right</span>
       </a>
-
-      {/* Partie Basse : Métadonnées et Extraits */}
       <div className="carte-resultat-details">
         <div className="carte-resultat-chips">
           {metaSupp.map(m => {
-            const actif = estFiltreActif(m, livre, filtresActifs);
+            const actif = estFiltreActif(m, livre, filtresActifs)
             return (
               <span key={m.key} className={`chip${actif ? ' chip--actif' : ''}`}>
                 <strong>{m.label}</strong>&nbsp;{String(livre[m.key] ?? '')}
               </span>
-            );
+            )
           })}
-          
-          {/* Chip spécial si on a trouvé des occurrences dans la transcription */}
           {extraits.length > 0 && (
             <span className="chip chip--actif">
               <span className="material-icons" style={{ fontSize: '13px' }}>history_edu</span>
@@ -156,7 +151,6 @@ function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
             </span>
           )}
         </div>
-
         {extraits.length > 0 && (
           <div className="extraits-container">
             {extraits.map((texte, idx) => (
@@ -168,6 +162,7 @@ function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
     </div>
   )
 }
+
 // ─── Moteur principal ─────────────────────────────────────────────────────────
 
 export default function MoteurFacettes({ livres, chunksParLivre, colonnesMeta }) {
@@ -229,9 +224,11 @@ export default function MoteurFacettes({ livres, chunksParLivre, colonnesMeta })
     const hitsMots = indexMots.getMatches(
       new fuzzySearch.Query(recherche, Infinity, [
         new fuzzySearch.SubstringSearcher(0),
-        new fuzzySearch.FuzzySearcher(0.2)
+        new fuzzySearch.FuzzySearcher(0.5)
       ])
     ).matches
+
+    console.log(hitsMots)
 
     const extraitsParLivre = new Map()
     const motsMatchesParLivre = new Map() // livreId -> Set de mots trouvés
@@ -366,14 +363,18 @@ export default function MoteurFacettes({ livres, chunksParLivre, colonnesMeta })
         .resultats-compteur { color: var(--md-on-surface-medium); font-size: 0.875rem; }
         .resultats-compteur strong { color: var(--md-on-surface); }
         .resultats-liste { display: flex; flex-direction: column; gap: 12px; }
-        .carte-resultat { display: flex; align-items: center; gap: 16px; padding: 16px 20px; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.12); text-decoration: none; color: inherit; transition: box-shadow 200ms; }
-        .carte-resultat:hover { box-shadow: 0 4px 12px rgba(0,0,0,.15); text-decoration: none; }
+        .carte-resultat { display: flex; flex-direction: column; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.12); overflow: hidden; transition: box-shadow 200ms; }
+        .carte-resultat:hover { box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+        .carte-resultat-lien-titre { display: block; text-decoration: none; color: inherit; }
+        .carte-resultat-entete { display: flex; align-items: center; gap: 16px; padding: 16px 20px; }
         .carte-resultat-icone { width: 40px; height: 40px; background: var(--md-primary-tint); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--md-primary); }
         .carte-resultat-info { flex: 1; min-width: 0; }
-        .carte-resultat-titre { font-size: 1rem; font-weight: 600; margin-bottom: 2px; }
+        .carte-resultat-titre { font-size: 1rem; font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .carte-resultat-sous-titre { font-size: 0.875rem; color: var(--md-on-surface-medium); font-style: italic; margin-bottom: 2px; }
-        .carte-resultat-auteur { font-size: 0.875rem; color: var(--md-on-surface-medium); margin-bottom: 8px; }
-        .carte-resultat-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .carte-resultat-auteur { font-size: 0.875rem; color: var(--md-on-surface-medium); margin-bottom: 0; }
+        .carte-resultat-details { padding: 0 20px 16px; border-top: 1px solid var(--md-divider); }
+        .carte-resultat-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 12px; }
+        .carte-resultat-fleche { color: #bdbdbd; flex-shrink: 0; }
         .chip--actif {
           background: var(--md-primary);
           color: var(--md-on-primary);

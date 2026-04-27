@@ -4,8 +4,8 @@
 
 - **Astro 5** — générateur de site statique, `output: 'static'`, déploiement GitHub Pages
 - **React 18** + **`@astrojs/react` 4** — composants interactifs côté client ("îlots")
-- **Clover IIIF** (`@samvera/clover-iiif`) — viewer IIIF multicanvas (remplace Mirador 4)
-- **MiniSearch** — recherche floue côté client (remplace Fuse.js)
+- **Clover IIIF** (`@samvera/clover-iiif`) — viewer IIIF multicanvas
+- **@m31coding/fuzzy-search** — recherche floue côté client
 - **fast-xml-parser** — parsing XML au moment du build (`preserveOrder: true`)
 - **Python** (scripts externes) — preprocessing des données
 
@@ -79,6 +79,12 @@ data/transcriptions/│   + xmlRules.ts    getColonnesMeta()   (/livres/[id])
                                               └─→ TranscriptionPage[]
                                                     ├─ html
                                                     └─ ancres[] (id, label, pageN, inPassages)
+                                        getChunksTranscription()
+                                              └─→ TranscriptionChunk[]
+                                                    ├─ id      "${livreId}__${pageN}__${i}"
+                                                    ├─ livreId
+                                                    ├─ pageN
+                                                    └─ texte   ~300 chars, chevauchement 80
 
 data/manifestes/ ──→ cp → public/manifestes/ ──→ servis statiquement
 ```
@@ -88,8 +94,10 @@ data/manifestes/ ──→ cp → public/manifestes/ ──→ servis statiqueme
 ```
 /recherche
     └─→ MoteurFacettes.jsx (React, client:load)
-            ├─ MiniSearch : recherche plein texte sur titre/auteur/transcription
-            └─ .filter() JS : facettes auto-générées depuis les colonnes CSV
+            ├─ indexMeta    : fuzzy-search sur titre/auteur/sous-titre
+            ├─ indexMots    : fuzzy-search sur les mots extraits des chunks
+            ├─ mapMotsVersChunks : mot → [{ livreId, chunkId, positions[] }]
+            └─ recherche plein texte : voir section dédiée ci-dessous
 
 /livres/[id]
     └─→ CloverViewer.jsx (React, client:only)
@@ -99,18 +107,73 @@ data/manifestes/ ──→ cp → public/manifestes/ ──→ servis statiqueme
 
 ---
 
+## Moteur de recherche plein texte (`MoteurFacettes.jsx`)
+
+### Indexation au montage
+
+Deux index sont construits une seule fois dans `useMemo` :
+
+**`indexMeta`** — fuzzy-search sur titre, sous-titre et auteur de chaque livre.
+
+**`indexMots` + `mapMotsVersChunks`** — construit par `construireIndexMots()` :
+- Les transcriptions sont découpées en chunks de ~300 caractères (chevauchement 80) par `getChunksTranscription()` côté build.
+- Chaque chunk est tokenisé mot par mot. Pour chaque mot, on stocke dans `mapMotsVersChunks` : `mot → [{ livreId, chunkId, positions: number[] }]` où `positions` sont les indices du mot dans la séquence de mots du chunk (pas des offsets caractères).
+- `indexMots` est un fuzzy-searcher construit sur l'ensemble des mots distincts, pour permettre la recherche approximative.
+
+Le chunkId vaut `${livreId}__${pageN}__${i}`, ce qui permet de retrouver `livreId` et `pageN` par simple split sans stocker ces infos en doublon.
+
+### Pipeline de recherche
+
+Pour chaque frappe, `resultats` (useMemo) exécute :
+
+**1. Filtrage facettes** — filtre `livresFiltres` sur les colonnes CSV actives.
+
+**2. Recherche meta** (`indexMeta`) — fuzzy match sur titre/auteur, retourne un Set d'ids.
+
+**3. Recherche plein texte** (`rechercherMultimots`) :
+
+Pour chaque mot significatif (longueur > 2) de la query, `rechercherMotDansIndex` interroge `indexMots` avec deux stratégies combinées :
+- `SubstringSearcher` — match de sous-chaîne exact
+- `FuzzySearcher` (seuil 0.5) — match approximatif
+
+Les formes réellement matchées (`matchedString`) sont collectées dans `allMatchs` — c'est ce qui sert au highlight, pas les mots de la query. Pour chaque forme matchée, les occurrences sont récupérées depuis `mapMotsVersChunks` et filtrées par `idsFiltres`.
+
+Résultat par mot : `{ allMatchingChunks: { [chunkId]: { livreId, chunkId, positions[] } }, allMatchs: Set }`.
+
+**4. Scoring des chunks** — pour chaque chunk présent dans au moins un résultat par mot :
+
+| Condition | Score |
+|---|---|
+| tous les mots matchés + en ordre + proches | 0 |
+| tous les mots matchés | 1 |
+| n-1 mots + en ordre + proches | 2 |
+| n-1 mots | 3 |
+| … | … |
+
+"En ordre et proches" est vérifié par `motsEnOrdreEtProches()` : pour chaque paire de mots consécutifs de la query, il doit exister des positions telles que le second mot suit le premier avec un écart ≤ 3 positions dans la séquence de mots du chunk.
+
+Les chunks sont triés par score croissant. Les 10 meilleurs par livre sont retenus comme extraits. Le texte du chunk est récupéré depuis `chunksParLivre` uniquement à ce moment (pas stocké dans l'index).
+
+**5. Fusion** — union des ids trouvés par meta et par plein texte, enrichis de `_extraits` (textes des chunks) et `_motsMatches` (formes matchées pour le highlight).
+
+### Highlight
+
+`ExtraitTranscription` reçoit le texte brut du chunk et `_motsMatches` (les `matchedString` fuzzy, pas les mots de la query). Une regex construite sur ces formes surligne exactement ce qui a été trouvé par l'index, y compris les matchs fuzzy.
+
+---
+
 ## Conventions des données
 
 ### metadata.csv — colonnes
 
-|Colonne|Statut|Rôle|
+| Colonne | Statut | Rôle |
 |---|---|---|
-|`id`|**obligatoire**|slug URL (`/livres/[id]`), doit correspondre au nom du XML|
-|`titre`|**obligatoire**|affiché en titre|
-|`auteur`|**obligatoire**|plusieurs auteurs séparés par `;`|
-|`manifeste_url`|**obligatoire**|URL du manifeste IIIF servi par le site|
-|`sous_titre`|optionnel|affiché en italique|
-|toute autre colonne|libre|devient automatiquement une facette|
+| `id` | **obligatoire** | slug URL (`/livres/[id]`), doit correspondre au nom du XML |
+| `titre` | **obligatoire** | affiché en titre |
+| `auteur` | **obligatoire** | plusieurs auteurs séparés par `;` |
+| `manifeste_url` | **obligatoire** | URL du manifeste IIIF servi par le site |
+| `sous_titre` | optionnel | affiché en italique |
+| toute autre colonne | libre | devient automatiquement une facette |
 
 **Forcer le type d'une facette** en préfixant le nom de colonne : `range__date`, `select__genre`, `text__remarques`
 
@@ -139,14 +202,14 @@ Le mode choisi est persisté dans `sessionStorage` (`livreMode`). Le mode côte-
 ### Navigation de transcription
 
 La navigation entre pages de transcription utilise :
-- Un **select** "Page N" en haut du panneau (remplace les badges de page, non scalable au-delà de ~20 pages)
+- Un **select** "Page N" en haut du panneau
 - Des boutons **Précédent / Suivant** en haut et en bas du contenu
 
-Le conteneur de transcription a une hauteur fixe (`70vh`) en mode côte-à-côte, identique à celle du viewer. La zone de texte scroll en interne (`overflow-y: auto`), les barres de navigation haut et bas sont toujours visibles hors du scroll (`flex-shrink: 0`). En mode onglets, la hauteur est libre (scroll de page entière).
+Le conteneur de transcription a une hauteur fixe (`70vh`) en mode côte-à-côte, identique à celle du viewer. La zone de texte scroll en interne (`overflow-y: auto`), les barres de navigation haut et bas sont toujours visibles hors du scroll (`flex-shrink: 0`). En mode onglets, la hauteur est libre.
 
 ### État de page unique
 
-Un seul objet `etat = { page: 0 }` est partagé entre les deux modes. Cela garantit que basculer de mode ne réinitialise pas la page courante. `syncAffichageTousModes()` resynchronise l'affichage des deux listes de pages (onglets et côte-à-côte) sur `etat.page` sans modifier l'index.
+Un seul objet `etat = { page: 0 }` est partagé entre les deux modes. Cela garantit que basculer de mode ne réinitialise pas la page courante. `syncAffichageTousModes()` resynchronise l'affichage des deux listes de pages sur `etat.page` sans modifier l'index.
 
 ### Viewer IIIF — CloverViewer.jsx
 
@@ -163,22 +226,15 @@ La communication passe par des **CustomEvents** sur `window` :
 | `clover:sync-enabled` | `[id].astro` → viewer | aucun |
 | `clover:sync-disabled` | `[id].astro` → viewer | aucun |
 
-**Viewer → transcription** : via la prop officielle `canvasIdCallback` de Clover, qui reçoit l'id IIIF du canvas actif à chaque navigation utilisateur. Le composant convertit cet id en index via `canvasIdsRef` et émet `clover:pagechange`. Le listener dans `[id].astro` met à jour l'affichage de la colonne transcription (mode côte-à-côte uniquement).
+**Viewer → transcription** : via la prop officielle `canvasIdCallback` de Clover. Le composant convertit l'id IIIF du canvas actif en index via `canvasIdsRef` et émet `clover:pagechange`.
 
-**Transcription → viewer** : via un **plugin invisible** (`SyncPlugin`) enregistré dans `plugins[].imageViewer.controls`. Les plugins Clover reçoivent `useViewerDispatch` comme prop — c'est l'API officielle pour piloter l'état interne. Le plugin écoute `clover:goto` et dispatche `{ type: 'updateActiveCanvas', canvasId }` directement dans le contexte React de Clover. C'est la seule méthode fiable : modifier `iiifContent` ne provoque pas de navigation programmatique.
+**Transcription → viewer** : via un plugin invisible (`SyncPlugin`) enregistré dans `plugins[].imageViewer.controls`. Le plugin écoute `clover:goto` et dispatche `{ type: 'updateActiveCanvas', canvasId }` dans le contexte React de Clover.
 
-**Gestion du fetch asynchrone** : la liste des canvas IDs est chargée via `fetch(manifestUrl)` au montage. Si `clover:goto` arrive avant la fin du fetch (cas fréquent à l'init), l'index est mémorisé dans `pendingIndexRef` et re-dispatché dès que le fetch se termine.
-
-**Anti-boucle** : `ignoreNextRef` est positionné à `true` avant chaque navigation programmatique vers le viewer. Le `canvasIdCallback` qui s'ensuit est alors ignoré, évitant la boucle transcription → viewer → transcription.
+**Anti-boucle** : `ignoreNextRef` est positionné à `true` avant chaque navigation programmatique. Le `canvasIdCallback` qui s'ensuit est ignoré.
 
 ### Navigation vers un passage (ancres)
 
 Tout élément marqué `anchorable: true` dans `xmlRules.ts` reçoit un `id` HTML unique au build. Les URLs directes (`/livres/Livre-01#blockquotation-12`) sont gérées par `gererAncreUrl()` au chargement.
-
-Quand on navigue vers un passage (`allerAuPassage`) :
-- En mode **côte-à-côte** : la transcription et le viewer se synchronisent sur la bonne page
-- En mode **onglets** : la transcription s'ouvre à la bonne page, et le viewer est synchronisé silencieusement en arrière-plan (il sera à la bonne page si l'utilisateur bascule sur l'onglet viewer)
-- Via une **URL directe avec hash** : le mode côte-à-côte est forcé, puis le passage est affiché avec surbrillance
 
 ---
 
@@ -187,16 +243,14 @@ Quand on navigue vers un passage (`allerAuPassage`) :
 ### Viewer Clover — diagnostic
 
 Si la synchro transcription → viewer ne fonctionne pas, vérifier dans la console :
-1. Que `clover:goto` est bien émis (ajouter `window.addEventListener('clover:goto', console.log)`)
+1. Que `clover:goto` est bien émis
 2. Que `canvasIdsRef.current` n'est pas vide (le fetch du manifeste a réussi)
-3. Que `SyncPlugin` est bien monté (l'action `updateActiveCanvas` doit apparaître si Clover a un devtools Redux)
+3. Que `SyncPlugin` est bien monté
 
 ### Import dynamique obligatoire
 
-`CloverViewer.jsx` importe Clover via `import('@samvera/clover-iiif/viewer')` dans un `useEffect`, jamais en import statique en haut du fichier. Même contrainte pour tout autre viewer basé sur OpenSeadragon. Sans ça, le build Astro échoue avec `document is not defined`.
+`CloverViewer.jsx` importe Clover via `import('@samvera/clover-iiif/viewer')` dans un `useEffect`, jamais en import statique. Sans ça, le build Astro échoue avec `document is not defined`.
 
 ### Correspondance canvas IIIF ↔ page XML
 
-La synchro suppose que le canvas n°i du manifeste correspond à la page n°i du XML. C'est garanti si le manifeste est généré depuis le même PDF avec `nakala_vers_manifeste.py`. Un décalage (ex. canvas de couverture supplémentaire) briserait la synchro.
-
----
+La synchro suppose que le canvas n°i du manifeste correspond à la page n°i du XML. Un décalage (ex. canvas de couverture supplémentaire) briserait la synchro.

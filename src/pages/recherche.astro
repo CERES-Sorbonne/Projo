@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro'
 import MoteurFacettes from '../components/MoteurFacettes.jsx'
 import { getLivres, getColonnesMeta, getChunksTranscription } from '../lib/parseData'
+import fs from 'fs'
 
 const livres = getLivres()
 const colonnesMeta = getColonnesMeta(livres)
@@ -10,7 +11,7 @@ const colonnesMeta = getColonnesMeta(livres)
 const chunksParLivre: Record<string, { pageN: string|number, texte: string }[]> = {}
 for (const livre of livres) {
   chunksParLivre[livre.id] = getChunksTranscription(livre.id)
-    .map(c => ({ pageN: c.pageN, texte: c.texte }))
+    .map(c => ({ pageN: c.pageN, texte: c.texte, id: c.id }))
 }
 
 const colonnesJson = JSON.stringify(colonnesMeta)

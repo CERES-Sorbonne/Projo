@@ -310,13 +310,20 @@ export function getLivres(): Livre[] {
   })) as Livre[]
 }
 
+export function createIndex(livreIds: string[]){
+  const transcriptions = []
+  for(let livreId of livreIds){
+    transcriptions.push()
+  }
+}
+
 /** Découpe les transcriptions en chunks de ~300 chars avec chevauchement de 80 chars */
 export function getChunksTranscription(livreId: string): TranscriptionChunk[] {
   const livre = getLivreAvecTranscription(livreId)
   if (!livre) return []
 
   const TAILLE = 300
-  const CHEVAUCHEMENT = 80
+  const CHEVAUCHEMENT = 15
   const chunks: TranscriptionChunk[] = []
 
   for (const page of livre.transcriptionPages) {

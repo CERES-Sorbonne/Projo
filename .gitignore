@@ -1,6 +1,8 @@
-*.pdf
-*.png
-*.jpeg
+# Images IIIF générées (volumineuses, hébergées sur Nakala)
+data/images/
+
+# Manifestes générés au build
+public/manifestes/
 
 # Logs
 logs

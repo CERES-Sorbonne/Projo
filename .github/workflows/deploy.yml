@@ -16,6 +16,9 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  SITE_URL: https://ceres-sorbonne.github.io/projo
+  
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -40,6 +43,11 @@ jobs:
       - name: Installer les dépendances
         run: npm ci
 
+      - name: Remplacer les URLs localhost
+        run: |
+        find data/manifestes -name "*.json" -exec sed -i \
+          "s|http://localhost:4321|$SITE_URL|g" {} +
+        sed -i "s|http://localhost:4321|$SITE_URL|g" data/metadata.csv
       - name: Build Astro
         run: npm run build
         env:

@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
+    "dev": "cp -r data/manifestes public/ && astro dev",
+    "build": "cp -r data/manifestes public/ && astro build",
     "preview": "astro preview"
   },
   "dependencies": {

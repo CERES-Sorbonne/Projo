@@ -2,6 +2,7 @@
 import Base from '../../layouts/Base.astro'
 import CloverViewer from '../../components/CloverViewer.jsx'
 import { getLivres, getLivreAvecTranscription } from '../../lib/parseData'
+import {url} from "../../lib/url"
 
 export async function getStaticPaths() {
   const livres = getLivres()
@@ -23,7 +24,10 @@ const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url
 const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 
 const toutesAncres = livre.transcriptionPages.flatMap(p => p.ancres ?? []).filter(a => a.inPassages)
-const baseUrl = Astro.site ? new URL(`/livres/${id}`, Astro.site).toString() : `/livres/${id}`
+const baseUrl = new URL(`${import.meta.env.BASE_URL}livres/${id}`, Astro.site).toString()
+const manifesteUrl = livre.manifeste_url.startsWith('http')
+  ? livre.manifeste_url
+  : new URL(`${import.meta.env.BASE_URL}${livre.manifeste_url}`, Astro.site).toString()
 
 const nbPages = livre.transcriptionPages.length
 ---
@@ -32,7 +36,7 @@ const nbPages = livre.transcriptionPages.length
   <div class="livre-entete">
     <div class="conteneur">
       <div class="fil-ariane">
-        <a href="/">Accueil</a>
+        <a href={url("/")}>Accueil</a>
         <span class="material-icons" style="font-size:16px;opacity:0.5">chevron_right</span>
         <span>Collection</span>
         <span class="material-icons" style="font-size:16px;opacity:0.5">chevron_right</span>
@@ -74,7 +78,7 @@ const nbPages = livre.transcriptionPages.length
         clover:sync-enabled / clover:sync-disabled  — activé en mode côte-à-côte
     -->
     <div id="viewer-anchor" style="display:none">
-      <CloverViewer manifestUrl={livre.manifeste_url} client:only="react" />
+      <CloverViewer manifestUrl={manifesteUrl} client:only="react" />
     </div>
 
     <div id="livre-corps" class="livre-corps mode-onglets">

@@ -3,6 +3,7 @@
  */
 import { useState, useMemo } from 'react'
 import * as fuzzySearch from '@m31coding/fuzzy-search'
+import {url} from '../lib/url'
 
 // ─── Composants de facettes ───────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
 
   return (
     <div className={`carte-resultat${extraits.length > 0 ? ' carte-resultat--transcription' : ''}`}>
-      <a href={`/livres/${livre.id}`} className="carte-resultat-lien-titre">
+      <a href={url(`/livres/${livre.id}`)} className="carte-resultat-lien-titre">
         <div className="carte-resultat-entete">
           <div className="carte-resultat-icone">
             <span className="material-icons">menu_book</span>

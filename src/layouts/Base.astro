@@ -5,7 +5,9 @@ export interface Props {
 }
 const { titre = 'Projet Espiègle', description = '' } = Astro.props
 const siteNom = 'Projet Espiègle'
+import { url } from '../lib/url'
 ---
+
 <!doctype html>
 <html lang="fr">
   <head>
@@ -21,13 +23,13 @@ const siteNom = 'Projet Espiègle'
     <!-- Navigation -->
     <nav class="nav-principale">
       <div class="nav-contenu">
-        <a href="/" class="nav-logo">
+        <a href={url("/")} class="nav-logo">
           <span class="material-icons">auto_stories</span>
           <span>{siteNom}</span>
         </a>
         <div class="nav-liens">
-          <a href="/" class="nav-lien">Accueil</a>
-          <a href="/recherche" class="nav-lien">Recherche</a>
+          <a href={url('/')} class="nav-lien">Accueil</a>
+          <a href={url('/recherche')} class="nav-lien">Recherche</a>
         </div>
       </div>
     </nav>

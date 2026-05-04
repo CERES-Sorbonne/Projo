@@ -47,7 +47,6 @@ jobs:
         run: |
           find data/manifestes -name "*.json" -exec sed -i \
           "s|http://localhost:4321|$SITE_URL|g" {} +
-          sed -i "s|http://localhost:4321|$SITE_URL|g" data/metadata.csv
       - name: Build Astro
         run: npm run build
         env:

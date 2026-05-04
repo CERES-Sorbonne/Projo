@@ -2,6 +2,8 @@
 import Base from '../layouts/Base.astro'
 import CarteLivre from '../components/CarteLivre.astro'
 import { getLivres } from '../lib/parseData'
+import { url } from '../lib/url'
+
 import coverImage from '../assets/cover_image.png';
 
 const livres = getLivres()
@@ -18,7 +20,7 @@ const livres = getLivres()
         lisez les transcriptions annotées et recherchez dans l'ensemble du corpus.
       </p>
       <div class="hero-actions">
-        <a href="/recherche" class="btn btn-primary">
+        <a href={url("/recherche")} class="btn btn-primary">
           <span class="material-icons">search</span>
           Moteur de recherche
         </a>

@@ -171,7 +171,7 @@ Les chunks sont triés par score croissant. Les 10 meilleurs par livre sont rete
 | `id` | **obligatoire** | slug URL (`/livres/[id]`), doit correspondre au nom du XML |
 | `titre` | **obligatoire** | affiché en titre |
 | `auteur` | **obligatoire** | plusieurs auteurs séparés par `;` |
-| `manifeste_url` | **obligatoire** | URL du manifeste IIIF servi par le site |
+| `manifeste_url` | **obligatoire** | URL du manifeste IIIF servi par le site, peut être une url distante écrite en dure ou une url relative |
 | `sous_titre` | optionnel | affiché en italique |
 | toute autre colonne | libre | devient automatiquement une facette |
 
@@ -254,3 +254,9 @@ Si la synchro transcription → viewer ne fonctionne pas, vérifier dans la cons
 ### Correspondance canvas IIIF ↔ page XML
 
 La synchro suppose que le canvas n°i du manifeste correspond à la page n°i du XML. Un décalage (ex. canvas de couverture supplémentaire) briserait la synchro.
+
+### Gestion des URL
+
+Ce site supporte le fait d'avoir un prefixe d'url dans l'url, ce dernier est défini dans le fichier de config astro.config.mjs, pour être sûr que tous les liens sont bons, on utilise le helper url dans lib/url pour construire des liens en mettant automatiquement le préfixe devant. Cela vaut aussi pour les liens vers les manifestes relatifs indiqués dans le csv.
+
+AU DEPLOIEMENT, on effectue un sed avant le build pour remplacer toutes les urls par une url de déploiement indiquée dans le fichier .github/workflows/deploy.yaml

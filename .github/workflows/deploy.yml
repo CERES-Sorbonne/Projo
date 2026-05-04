@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SITE_URL: https://ceres-sorbonne.github.io/projo
+  SITE_URL: https://ceres.sorbonne-universite.fr/Projo
   
 jobs:
   build:

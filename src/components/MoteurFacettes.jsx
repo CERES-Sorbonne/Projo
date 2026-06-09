@@ -326,6 +326,41 @@ function rechercherMultimots(mots, indexMots, mapMotsVersChunks, idsFiltres, chu
 
   return { extraitsParLivre, motsMatchesParLivre }
 }
+// ─── Export CSV ───────────────────────────────────────────────────────────────
+
+function telechargerResultats(resultats, colonnesMeta, chunksParLivre) {
+  const escapeCsv = val => {
+    const s = String(val ?? '')
+    return (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes(';'))
+      ? `"${s.replace(/"/g, '""')}"`
+      : s
+  }
+
+  const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', '_extraits', '_motsMatches'])
+  const colonnesExtra = colonnesMeta.filter(m => !RESERVEES.has(m.key))
+  const entetes = ['id', 'titre', 'sous_titre', 'auteur', ...colonnesExtra.map(m => m.key), 'transcription']
+
+  const lignes = [
+    entetes.join(','),
+    ...resultats.map(livre => {
+      const chunks = chunksParLivre[livre.id] || []
+      const transcription = chunks.map(c => c.texte).join(' ')
+      return entetes.map(col => {
+        if (col === 'transcription') return escapeCsv(transcription)
+        if (col === 'auteur') return escapeCsv(Array.isArray(livre.auteur) ? livre.auteur.join('; ') : (livre.auteur ?? ''))
+        return escapeCsv(livre[col])
+      }).join(',')
+    })
+  ]
+
+  const blob = new Blob(['﻿' + lignes.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'resultats.csv'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
 // ─── Moteur principal ─────────────────────────────────────────────────────────
 
 export default function MoteurFacettes({ livres, chunksParLivre, colonnesMeta }) {
@@ -441,6 +476,16 @@ export default function MoteurFacettes({ livres, chunksParLivre, colonnesMeta })
               <strong>{resultats.length}</strong> résultat{resultats.length !== 1 ? 's' : ''}
               {livres.length !== resultats.length && ` sur ${livres.length}`}
             </p>
+            {resultats.length > 0 && (
+              <button
+                className="btn-telecharger"
+                onClick={() => telechargerResultats(resultats, colonnesMeta, chunksParLivre)}
+                title="Télécharger les résultats (CSV)"
+              >
+                <span className="material-icons">download</span>
+                Télécharger
+              </button>
+            )}
           </div>
           {resultats.length === 0 ? (
             <div className="resultats-vide carte">
@@ -486,7 +531,10 @@ export default function MoteurFacettes({ livres, chunksParLivre, colonnesMeta })
         .facette-range-inputs input[type="range"] { width: 100%; accent-color: var(--md-primary); }
         .facette-input { width: 100%; border: 1px solid var(--md-divider); border-radius: var(--radius); padding: 8px 12px; font-family: var(--font-corps); font-size: 0.875rem; outline: none; transition: border-color var(--transition); }
         .facette-input:focus { border-color: var(--md-primary); }
-        .resultats-entete { margin-bottom: 16px; }
+        .resultats-entete { margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .btn-telecharger { display: flex; align-items: center; gap: 4px; background: none; border: 1px solid var(--md-divider); border-radius: 20px; padding: 5px 14px; font-size: 0.8rem; cursor: pointer; color: var(--md-on-surface-medium); transition: all 180ms; font-family: var(--font-corps); white-space: nowrap; }
+        .btn-telecharger:hover { background: var(--md-primary-tint); border-color: var(--md-primary); color: var(--md-primary); }
+        .btn-telecharger .material-icons { font-size: 16px !important; }
         .resultats-compteur { color: var(--md-on-surface-medium); font-size: 0.875rem; }
         .resultats-compteur strong { color: var(--md-on-surface); }
         .resultats-liste { display: flex; flex-direction: column; gap: 12px; }

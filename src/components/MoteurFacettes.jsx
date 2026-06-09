@@ -77,7 +77,6 @@ function ExtraitTranscription({ texte, motsMatches }) {
     .map(m => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|')
 
-  console.log(pattern)
   if (!pattern) return <p className="extrait-texte">{texte}</p>
 
   const regex = new RegExp(`(${pattern})`, 'gi')
@@ -219,7 +218,7 @@ function rechercherMotDansIndex(motQuery, indexMots, mapMotsVersChunks, idsFiltr
       new fuzzySearch.SubstringSearcher(0),
       new fuzzySearch.FuzzySearcher(0.5)
     ])
-  ).matches
+  ).matches.filter(h => h.matchedString.length <= motQuery.length * 2)
 
   const allMatchs = new Set(hits.map(h => h.matchedString))
   const allMatchingChunks = {}
@@ -294,18 +293,35 @@ function rechercherMultimots(mots, indexMots, mapMotsVersChunks, idsFiltres, chu
   const extraitsParLivre = new Map()
   const motsMatchesParLivre = new Map()
 
+  // Pour les requêtes multi-mots : regex de phrase qui intègre les formes fuzzy des mots
+  // significatifs et les mots courts en position, pour ne surligner "de" que près de "Neri".
+  let phraseRegex = null
+  if (mots.length > 1) {
+    let sigIdx = 0
+    const parties = mots.map(mot => {
+      if (mot.length <= 2) return mot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const forms = Array.from(searchResults[sigIdx++]?.allMatchs ?? [])
+        .sort((a, b) => b.length - a.length)
+      return forms.length
+        ? `(?:${forms.map(f => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
+        : mot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    })
+    phraseRegex = new RegExp(parties.join(`[\\s,.;:!?()'"«»]+`), 'gi')
+  }
+
   for (const { chunkId, livreId, indicesMatchés } of chunksScores) {
     if (!extraitsParLivre.has(livreId)) extraitsParLivre.set(livreId, [])
     const eArr = extraitsParLivre.get(livreId)
-    if (eArr.length < 10) {
-      const chunk = chunksParLivre[livreId]?.find(c => c.id === chunkId)
-      if (chunk) eArr.push(chunk.texte)
-    }
+    const chunk = chunksParLivre[livreId]?.find(c => c.id === chunkId)
+    if (eArr.length < 10 && chunk) eArr.push(chunk.texte)
 
     if (!motsMatchesParLivre.has(livreId)) motsMatchesParLivre.set(livreId, new Set())
     const mSet = motsMatchesParLivre.get(livreId)
-    console.log(searchResults)
     indicesMatchés.forEach(i => searchResults[i].allMatchs.forEach(m => mSet.add(m)))
+    if (phraseRegex && chunk) {
+      phraseRegex.lastIndex = 0
+      for (const m of chunk.texte.matchAll(phraseRegex)) mSet.add(m[0].toLowerCase())
+    }
   }
 
   return { extraitsParLivre, motsMatchesParLivre }

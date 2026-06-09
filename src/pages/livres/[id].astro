@@ -1,8 +1,10 @@
 ---
 import Base from '../../layouts/Base.astro'
 import CloverViewer from '../../components/CloverViewer.jsx'
-import { getLivres, getLivreAvecTranscription } from '../../lib/parseData'
+import RechercheLivre from '../../components/recherche/RechercheLivre.jsx'
+import { getLivres, getLivreAvecTranscription, getChunksTranscription } from '../../lib/parseData'
 import {url} from "../../lib/url"
+import '../../styles/livre.css'
 
 export async function getStaticPaths() {
   const livres = getLivres()
@@ -30,6 +32,14 @@ const manifesteUrl = livre.manifeste_url.startsWith('http')
   : new URL(`${import.meta.env.BASE_URL}${livre.manifeste_url}`, Astro.site).toString()
 
 const nbPages = livre.transcriptionPages.length
+
+// Recherche plein-texte dans l'ouvrage : chunks calculés au build (fs),
+// passés en props à l'île React. pageN est l'attribut XML @n, pas l'index
+// de tableau — le mapping est indispensable pour clover:goto.
+const chunks = getChunksTranscription(id!)
+const pageNVersIndex = Object.fromEntries(
+  livre.transcriptionPages.map((p, i) => [String(p.n), i])
+)
 ---
 
 <Base titre={livre.titre} description={`${livre.titre} — ${auteurs}`}>
@@ -68,6 +78,15 @@ const nbPages = livre.transcriptionPages.length
         </button>
       </div>
     </div>
+
+    {chunks.length > 0 && (
+      <RechercheLivre
+        livreId={id}
+        chunks={chunks}
+        pageNVersIndex={pageNVersIndex}
+        client:idle
+      />
+    )}
 
     <!--
       CloverViewer monté avec client:load (pas client:only) pour pouvoir
@@ -387,6 +406,21 @@ const nbPages = livre.transcriptionPages.length
     if (index !== etat.page) afficherPage('cote', index)
   })
 
+  // ── Recherche plein-texte → transcription + viewer ──────────────────────────
+  // Émis par RechercheLivre.jsx au clic sur un résultat. Même comportement
+  // qu'allerAuPassage : affiche la page dans le mode actif et aligne le viewer.
+  window.addEventListener('transcription:goto', (e) => {
+    const index = e.detail?.index ?? 0
+    const corps = document.getElementById('livre-corps')
+    if (corps?.className.includes('mode-cote')) {
+      afficherPage('cote', index)
+    } else {
+      afficherPage('onglets', index)
+      afficherPanel('transcription')
+    }
+    window.dispatchEvent(new CustomEvent('clover:goto', { detail: { index } }))
+  })
+
   // ── Navigation vers un passage (ancre) ───────────────────────────────────────
   function allerAuPassage(ancreId) {
     const el = document.getElementById(ancreId)
@@ -498,445 +532,3 @@ const nbPages = livre.transcriptionPages.length
   window.allerAuPassage  = allerAuPassage
   window.copierUrl       = copierUrl
 </script>
-<style>
-  .livre-entete {
-    background: var(--md-surface);
-    border-bottom: 1px solid var(--md-divider);
-    padding: 24px 0;
-  }
-
-  .fil-ariane {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.8rem;
-    color: var(--md-on-surface-medium);
-    margin-bottom: 12px;
-  }
-
-  .fil-ariane a { color: var(--md-primary); }
-
-  .livre-titre {
-    font-family: 'Crimson Pro', Georgia, serif;
-    font-size: clamp(1.5rem, 3vw, 2.25rem);
-    font-weight: 600;
-    margin-bottom: 4px;
-  }
-
-  .livre-sous-titre {
-    font-size: 1.1rem;
-    font-style: italic;
-    color: var(--md-on-surface-medium);
-    margin-bottom: 4px;
-  }
-
-  .livre-auteur { color: var(--md-on-surface-medium); margin-bottom: 12px; }
-  .livre-chips  { display: flex; flex-wrap: wrap; gap: 8px; }
-
-  .mode-barre {
-    display: flex;
-    justify-content: flex-end;
-    padding: 16px 0 8px;
-  }
-
-  .mode-boutons {
-    display: inline-flex;
-    background: var(--md-surface);
-    border: 1px solid var(--md-divider);
-    border-radius: 6px;
-    overflow: hidden;
-    box-shadow: var(--md-elevation-1);
-  }
-
-  .mode-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 16px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-family: var(--font-corps);
-    font-size: 0.8rem;
-    font-weight: 500;
-    letter-spacing: 0.04em;
-    color: var(--md-on-surface-medium);
-    transition: background var(--transition), color var(--transition);
-    border-right: 1px solid var(--md-divider);
-  }
-
-  .mode-btn:last-child        { border-right: none; }
-  .mode-btn .material-icons   { font-size: 18px; }
-  .mode-btn.actif             { background: var(--md-primary); color: var(--md-on-primary); }
-  .mode-btn:not(.actif):hover { background: rgba(26,35,126,0.06); color: var(--md-primary); }
-
-  .livre-corps { margin-bottom: 32px; }
-
-  .mode-onglets #section-onglets { display: block; }
-  .mode-onglets #section-cote    { display: none; }
-  .mode-cote    #section-onglets { display: none; }
-  .mode-cote    #section-cote    { display: grid; }
-
-  /* ── Slots viewer ───────────────────────────────────────────────────────────
-   * Le composant Clover utilise canvasHeight: '100%' → le slot DOIT avoir
-   * une hauteur explicite. On utilise la même valeur (70vh) pour les deux
-   * modes afin d'aligner viewer et transcription en côte-à-côte.
-   */
-  .viewer-slot { width: 100%; }
-
-  .viewer-slot-onglets,
-  .viewer-slot-cote {
-    height: 70vh;
-    min-height: 500px;
-    /* Clover a besoin d'un contexte de positionnement pour canvasHeight auto */
-    position: relative;
-  }
-
-  .section-onglets-nav {
-    display: flex;
-    border-bottom: 1px solid var(--md-divider);
-    background: var(--md-surface);
-  }
-
-  .onglet {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 14px 24px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-family: var(--font-corps);
-    font-size: 0.875rem;
-    font-weight: 500;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--md-on-surface-medium);
-    border-bottom: 3px solid transparent;
-    margin-bottom: -1px;
-    transition: color var(--transition), border-color var(--transition);
-  }
-
-  .onglet.actif { color: var(--md-primary); border-bottom-color: var(--md-primary); }
-  .onglet:hover { color: var(--md-primary); background: rgba(26,35,126,0.04); }
-
-  .panel       { display: none; }
-  .panel.actif { display: block; }
-
-  /* ── Navigation de page (barre haute) ── */
-  .transcription-nav {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background: var(--md-surface);
-    border-bottom: 1px solid var(--md-divider);
-    flex-shrink: 0;
-  }
-
-  .nav-page-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 6px 12px;
-    border: 1px solid var(--md-divider);
-    border-radius: var(--radius);
-    background: none;
-    cursor: pointer;
-    font-family: var(--font-corps);
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--md-primary);
-    transition: background var(--transition), color var(--transition);
-    white-space: nowrap;
-  }
-
-  .nav-page-btn:hover:not(:disabled) { background: var(--md-primary-tint); }
-  .nav-page-btn:disabled { color: var(--md-on-surface-medium); cursor: default; opacity: 0.45; }
-
-  .nav-page-btn.invisible {
-    visibility: hidden;
-    pointer-events: none;
-  }
-
-  .nav-page-btn .material-icons { font-size: 18px; }
-
-  .nav-select-wrap {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 1;
-    justify-content: center;
-  }
-
-  .nav-select-label { display: flex; align-items: center; color: var(--md-on-surface-medium); }
-  .nav-select-label .material-icons { font-size: 16px; }
-
-  .nav-select {
-    border: 1px solid var(--md-divider);
-    border-radius: var(--radius);
-    padding: 5px 8px;
-    font-family: var(--font-corps);
-    font-size: 0.875rem;
-    color: var(--md-on-surface);
-    background: var(--md-surface);
-    cursor: pointer;
-    outline: none;
-    max-width: 180px;
-    transition: border-color var(--transition);
-  }
-
-  .nav-select:focus { border-color: var(--md-primary); }
-
-  .nav-total {
-    font-size: 0.8rem;
-    color: var(--md-on-surface-medium);
-    white-space: nowrap;
-  }
-
-  /* ── Conteneur transcription flex-column ─────────────────────────────────────
-   * ┌─ .transcription-conteneur ──────────────────────┐
-   * │  .transcription-nav      (fixe, flex-shrink:0)  │
-   * │  .transcription-scroll   (flex:1, overflow:auto) │
-   * │  .transcription-nav-bas  (fixe, flex-shrink:0)  │
-   * └──────────────────────────────────────────────────┘
-   * --fixe : même hauteur que le viewer en mode côte-à-côte
-   */
-  .transcription-conteneur {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .transcription-conteneur--fixe {
-    height: 70vh;
-    min-height: 500px;
-  }
-
-  .transcription-scroll {
-    flex: 1;
-    overflow-y: auto;
-    padding: 24px;
-    min-height: 200px;
-  }
-
-  .transcription-nav-bas {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 16px;
-    border-top: 1px solid var(--md-divider);
-    background: var(--md-surface);
-    flex-shrink: 0;
-  }
-
-  .nav-bas-info {
-    font-size: 0.8rem;
-    color: var(--md-on-surface-medium);
-  }
-
-  .cote-sync-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    font-size: 0.7rem;
-    font-weight: 500;
-    color: var(--md-primary);
-    background: var(--md-primary-tint);
-    border-radius: 12px;
-    padding: 2px 8px;
-    letter-spacing: 0.03em;
-    text-transform: none;
-  }
-
-  /* ── Ancres ── */
-  :global(.transcription-ancre) {
-    display: inline-block;
-    margin-left: 0.4em;
-    font-size: 0.75em;
-    color: var(--md-primary);
-    opacity: 0;
-    transition: opacity 150ms;
-    text-decoration: none;
-    vertical-align: middle;
-    line-height: 1;
-  }
-
-  :global(*:hover > .transcription-ancre),
-  :global(.transcription-ancre:focus) { opacity: 0.6; }
-  :global(.transcription-ancre:hover) { opacity: 1; }
-
-  :global(.transcription-ancre-cible) { animation: pulse-ancre 1.8s ease-out; }
-
-  @keyframes pulse-ancre {
-    0%   { background: rgba(26, 35, 126, 0.18); outline: 2px solid rgba(26, 35, 126, 0.4); border-radius: 3px; }
-    100% { background: transparent; outline: none; }
-  }
-
-  /* ── Panneau Passages ── */
-  .passages-conteneur { padding: 24px; }
-
-  .passages-intro {
-    font-size: 0.85rem;
-    color: var(--md-on-surface-medium);
-    margin-bottom: 20px;
-    padding: 10px 14px;
-    background: #f5f5f5;
-    border-radius: 4px;
-    line-height: 1.5;
-  }
-
-  .passages-liste { display: flex; flex-direction: column; gap: 6px; }
-
-  .passage-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    border-radius: 4px;
-    border: 1px solid var(--md-divider);
-    background: var(--md-surface);
-    transition: background var(--transition);
-  }
-
-  .passage-item:hover { background: #f5f5f5; }
-  .passage-page { flex-shrink: 0; font-size: 0.7rem; padding: 2px 8px; }
-
-  .passage-lien {
-    flex: 1;
-    min-width: 0;
-    font-family: var(--font-texte);
-    font-size: 0.9rem;
-    color: var(--md-primary);
-    text-decoration: none;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .passage-lien:hover { text-decoration: underline; }
-
-  .passage-copier {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--md-on-surface-medium);
-    display: flex;
-    align-items: center;
-    padding: 4px;
-    border-radius: 4px;
-    transition: color var(--transition), background var(--transition);
-  }
-
-  .passage-copier:hover { color: var(--md-primary); background: rgba(26,35,126,0.08); }
-  .passage-copier .material-icons { font-size: 16px; }
-
-  /* ── Colonnes côte à côte ── */
-  .cote-wrapper {
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    align-items: start;
-  }
-
-  @media (max-width: 900px) { .cote-wrapper { grid-template-columns: 1fr; } }
-
-  .cote-colonne               { display: flex; flex-direction: column; overflow: hidden; }
-  .cote-transcription-colonne { display: flex; flex-direction: column; }
-
-  .cote-entete {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--md-divider);
-    font-size: 0.875rem;
-    font-weight: 500;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--md-primary);
-    background: var(--md-surface);
-    flex-shrink: 0;
-  }
-
-  .cote-entete .material-icons { font-size: 18px; }
-
-  .transcription-page        { display: none; }
-  .transcription-page.active { display: block; }
-  .transcription-page-entete { margin-bottom: 16px; }
-  .transcription-texte       { max-width: 680px; margin: 0 auto; }
-
-  .transcription-vide {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 64px;
-    color: var(--md-on-surface-medium);
-    gap: 12px;
-  }
-
-  .transcription-vide .material-icons { font-size: 48px; opacity: 0.4; }
-
-  /* ── Éléments HTR ── */
-  :global(.transcription-heading) {
-    font-family: var(--font-texte);
-    font-size: 1.15rem;
-    font-weight: 600;
-    line-height: 1.5;
-    margin-bottom: 1rem;
-    color: var(--md-on-surface);
-  }
-
-  :global(.transcription-heading[data-type="main"]) {
-    font-size: 1.35rem;
-    text-align: center;
-    border-bottom: 1px solid var(--md-divider);
-    padding-bottom: 0.5rem;
-    margin-bottom: 1.25rem;
-  }
-
-  :global(.transcription-line) { display: block; line-height: 1.7; }
-
-  :global(.transcription-figure) {
-    margin: 1rem 0;
-    padding: 10px 14px;
-    background: #fafafa;
-    border: 1px dashed var(--md-divider);
-    border-radius: 4px;
-    font-size: 0.85rem;
-    color: var(--md-on-surface-medium);
-    font-style: italic;
-  }
-
-  :global(.transcription-figcaption) { display: block; }
-
-  :global(.transcription-gap) {
-    display: inline-block;
-    color: var(--md-on-surface-medium);
-    font-style: italic;
-    font-size: 0.85em;
-    background: #f5f5f5;
-    border-radius: 3px;
-    padding: 2px 6px;
-    cursor: help;
-  }
-
-  :global(.transcription-gap::before) { content: '[…]'; }
-
-  :global(.transcription-stamp) {
-    display: inline-block;
-    font-size: 0.75em;
-    color: var(--md-on-surface-medium);
-    background: #f0f0f0;
-    border: 1px solid var(--md-divider);
-    border-radius: 50%;
-    padding: 2px 8px;
-    cursor: help;
-    vertical-align: middle;
-  }
-
-  :global(.transcription-stamp::before) { content: '⊕'; margin-right: 4px; }
-
-  :global(.transcription-header) { display: none; }
-</style>

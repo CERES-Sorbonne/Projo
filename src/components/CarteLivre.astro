@@ -1,6 +1,7 @@
 ---
 import type { Livre } from '../lib/parseData'
 import {url} from '../lib/url'
+import '../styles/carte-livre.css'
 
 export interface Props {
   livre: Livre
@@ -32,54 +33,3 @@ const date = livre.date as string | undefined
   </div>
 </a>
 
-<style>
-  .carte-livre {
-    display: block;
-    text-decoration: none;
-    color: inherit;
-  }
-
-  .carte-livre-corps {
-    display: flex;
-    gap: 16px;
-    padding: 20px;
-    align-items: flex-start;
-  }
-
-  .carte-livre-icone {
-    width: 48px;
-    height: 48px;
-    background: var(--md-primary-tint);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    color: var(--md-primary);
-  }
-
-  .carte-livre-info { flex: 1; min-width: 0; }
-
-  .carte-livre-titre {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--md-on-surface);
-    margin-bottom: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .carte-livre-sous-titre {
-    font-size: 0.875rem;
-    color: var(--md-on-surface-medium);
-    margin-bottom: 4px;
-    font-style: italic;
-  }
-
-  .carte-livre-auteur {
-    font-size: 0.875rem;
-    color: var(--md-on-surface-medium);
-    margin-bottom: 8px;
-  }
-</style>

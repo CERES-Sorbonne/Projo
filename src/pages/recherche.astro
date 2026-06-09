@@ -2,7 +2,7 @@
 import Base from '../layouts/Base.astro'
 import MoteurFacettes from '../components/MoteurFacettes.jsx'
 import { getLivres, getColonnesMeta, getChunksTranscription } from '../lib/parseData'
-import fs from 'fs'
+import '../styles/recherche.css'
 
 const livres = getLivres()
 const colonnesMeta = getColonnesMeta(livres)
@@ -38,26 +38,3 @@ const colonnesJson = JSON.stringify(colonnesMeta)
   </div>
 </Base>
 
-<style>
-  .page-entete {
-    margin-bottom: 32px;
-    padding-bottom: 24px;
-    border-bottom: 1px solid var(--md-divider);
-  }
-
-  .page-titre {
-    font-family: 'Crimson Pro', Georgia, serif;
-    font-size: 2rem;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 8px;
-  }
-
-  .page-titre .material-icons { color: var(--md-primary); font-size: 2rem; }
-
-  .page-description {
-    color: var(--md-on-surface-medium);
-  }
-</style>

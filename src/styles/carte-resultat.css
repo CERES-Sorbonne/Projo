@@ -1,0 +1,17 @@
+/* Carte résultat du moteur de recherche (CarteResultat.jsx). */
+
+.carte-resultat { display: flex; flex-direction: column; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.12); overflow: hidden; transition: box-shadow 200ms; }
+.carte-resultat:hover { box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+.carte-resultat-lien-titre { display: block; text-decoration: none; color: inherit; }
+.carte-resultat-entete { display: flex; align-items: center; gap: 16px; padding: 16px 20px; }
+.carte-resultat-icone { width: 40px; height: 40px; background: var(--md-primary-tint); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--md-primary); }
+.carte-resultat-info { flex: 1; min-width: 0; }
+.carte-resultat-titre { font-size: 1rem; font-weight: 600; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.carte-resultat-sous-titre { font-size: 0.875rem; color: var(--md-on-surface-medium); font-style: italic; margin-bottom: 2px; }
+.carte-resultat-auteur { font-size: 0.875rem; color: var(--md-on-surface-medium); margin-bottom: 0; }
+.carte-resultat-details { padding: 0 20px 16px; border-top: 1px solid var(--md-divider); }
+.carte-resultat-chips { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 12px; }
+.carte-resultat-fleche { color: #bdbdbd; flex-shrink: 0; }
+.carte-resultat--transcription { border-left: 3px solid var(--md-primary); }
+.chip--actif { background: var(--md-primary); color: var(--md-on-primary); font-weight: 600; }
+.chip--actif strong { color: rgba(255, 255, 255, 0.75); font-weight: 400; }

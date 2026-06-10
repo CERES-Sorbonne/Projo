@@ -32,6 +32,8 @@ export interface Livre {
   sous_titre?: string
   auteur: string | string[]
   manifeste_url: string
+  /** Éditions rattachées : lignes du CSV sans id qui suivent cet ouvrage. */
+  editions?: Record<string, string>[]
   [key: string]: unknown
 }
 
@@ -62,7 +64,7 @@ export interface Ancre {
 
 // ─── Colonnes réservées ───────────────────────────────────────────────────────
 
-const COLONNES_RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url'])
+const COLONNES_RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', 'editions'])
 
 // ─── Lecture du CSV ──────────────────────────────────────────────────────────
 
@@ -118,7 +120,7 @@ function detecterTypeColonne(key: string, valeurs: string[]): ColonneType {
   return 'text'
 }
 
-function nomLisible(key: string): string {
+export function nomLisible(key: string): string {
   const sansPrefixe = key.replace(/^(range|select|text)__/, '')
   return sansPrefixe.split('_').map(mot => mot.charAt(0).toUpperCase() + mot.slice(1)).join(' ')
 }
@@ -302,12 +304,23 @@ export function getLivres(): Livre[] {
   const contenu = fs.readFileSync(csvPath, 'utf-8')
   const lignes = parseCSV(contenu)
 
-  return lignes.map(ligne => ({
-    ...ligne,
-    auteur: ligne.auteur?.includes(';')
-      ? ligne.auteur.split(';').map(a => a.trim())
-      : ligne.auteur,
-  })) as Livre[]
+  // Une ligne sans id est considérée comme une édition de l'ouvrage précédent
+  // (la dernière ligne possédant un id). On la replie dans son tableau `editions`.
+  const livres: Livre[] = []
+  for (const ligne of lignes) {
+    if (ligne.id && ligne.id.trim() !== '') {
+      livres.push({
+        ...ligne,
+        auteur: ligne.auteur?.includes(';')
+          ? ligne.auteur.split(';').map(a => a.trim())
+          : ligne.auteur,
+        editions: [],
+      } as Livre)
+    } else if (livres.length > 0) {
+      livres[livres.length - 1].editions!.push(ligne)
+    }
+  }
+  return livres
 }
 
 export function createIndex(livreIds: string[]){

@@ -2,7 +2,7 @@
 import Base from '../../layouts/Base.astro'
 import CloverViewer from '../../components/CloverViewer.jsx'
 import RechercheLivre from '../../components/recherche/RechercheLivre.jsx'
-import { getLivres, getLivreAvecTranscription, getChunksTranscription } from '../../lib/parseData'
+import { getLivres, getLivreAvecTranscription, getChunksTranscription, nomLisible } from '../../lib/parseData'
 import {url} from "../../lib/url"
 import '../../styles/livre.css'
 
@@ -22,8 +22,22 @@ if (!livre) {
 
 const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
 
-const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages'])
+const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages', 'editions'])
 const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
+
+// ── Éditions ──────────────────────────────────────────────────────────────────
+// Lignes du CSV sans id repliées par parseData. On affiche l'ouvrage original
+// et ses éditions côte à côte, une colonne par édition, une ligne par métadonnée.
+const editions = (livre.editions ?? []) as Record<string, string>[]
+const toutesEditions = editions.length > 0 ? [livre as Record<string, unknown>, ...editions] : []
+const CHAMPS_EXCLUS = new Set(['id', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages', 'editions'])
+// Ordre des champs : on suit l'ordre des colonnes du CSV (clés d'une ligne édition)
+const champsEditions = editions.length > 0
+  ? Object.keys(editions[0])
+      .filter(k => !CHAMPS_EXCLUS.has(k))
+      // on masque les champs vides pour toutes les éditions
+      .filter(champ => toutesEditions.some(ed => String(ed[champ] ?? '').trim() !== ''))
+  : []
 
 const toutesAncres = livre.transcriptionPages.flatMap(p => p.ancres ?? []).filter(a => a.inPassages)
 const baseUrl = new URL(`${import.meta.env.BASE_URL}livres/${id}`, Astro.site).toString()
@@ -62,6 +76,43 @@ const pageNVersIndex = Object.fromEntries(
           </span>
         ))}
       </div>
+
+      {editions.length > 0 && (
+        <details class="editions-bloc">
+          <summary class="editions-summary">
+            <span class="material-icons editions-chevron">chevron_right</span>
+            <span class="material-icons">library_books</span>
+            Éditions
+            <span class="editions-compteur">{editions.length}</span>
+          </summary>
+          <div class="editions-tableau-wrap">
+            <table class="editions-tableau">
+              <thead>
+                <tr>
+                  <th class="editions-col-champ">Édition</th>
+                  {champsEditions.map(champ => (
+                    <th>{nomLisible(champ)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {toutesEditions.map((ed, i) => (
+                  <tr>
+                    <th scope="row" class="editions-col-champ">
+                      {i === 0 ? 'Originale' : `Édition ${i + 1}`}
+                    </th>
+                    {champsEditions.map(champ => {
+                      const v = ed[champ]
+                      const txt = Array.isArray(v) ? v.join(', ') : String(v ?? '')
+                      return <td>{txt || '—'}</td>
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
     </div>
   </div>
 

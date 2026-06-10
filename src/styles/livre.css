@@ -445,3 +445,89 @@
 .transcription-stamp::before { content: '⊕'; margin-right: 4px; }
 
 .transcription-header { display: none; }
+
+/* ── Bloc Éditions (collapsable) ─────────────────────────────────────────── */
+.editions-bloc {
+  margin-top: 16px;
+  border: 1px solid var(--md-divider);
+  border-radius: var(--radius);
+  background: var(--md-surface);
+}
+
+.editions-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--md-primary);
+  user-select: none;
+  list-style: none;
+}
+.editions-summary::-webkit-details-marker { display: none; }
+.editions-summary:hover { background: var(--md-primary-tint); }
+
+.editions-chevron {
+  font-size: 20px;
+  transition: transform var(--transition);
+}
+.editions-bloc[open] .editions-chevron { transform: rotate(90deg); }
+
+.editions-compteur {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #e8eaf6;
+  color: var(--md-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.editions-tableau-wrap {
+  overflow-x: auto;
+  border-top: 1px solid var(--md-divider);
+}
+
+.editions-tableau {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.editions-tableau th,
+.editions-tableau td {
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--md-divider);
+}
+
+.editions-tableau thead th {
+  position: sticky;
+  top: 0;
+  background: var(--md-surface);
+  color: var(--md-on-surface);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.editions-tableau tbody tr:hover { background: var(--md-primary-tint); }
+
+/* Colonne « Édition » figée à gauche pendant le défilement horizontal */
+.editions-col-champ {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--md-surface);
+  color: var(--md-on-surface-medium);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.editions-tableau tbody tr:hover .editions-col-champ { background: var(--md-primary-tint); }
+/* Coin haut-gauche : au-dessus des deux axes figés */
+.editions-tableau thead .editions-col-champ { z-index: 2; }

@@ -28,6 +28,8 @@ export interface ColonneMeta {
 
 export interface Livre {
   id: string
+  /** Identifiant d'URL lisible dérivé du titre (slug). Unique par ouvrage. */
+  slug: string
   titre: string
   sous_titre?: string
   auteur: string | string[]
@@ -118,6 +120,19 @@ function detecterTypeColonne(key: string, valeurs: string[]): ColonneType {
   const uniques = new Set(valeursNonVides)
   if (uniques.size <= 10) return 'select'
   return 'text'
+}
+
+/**
+ * Transforme un titre en slug d'URL : sans accents, minuscules, mots séparés
+ * par des tirets. Sert d'identifiant lisible dans les URLs /livres/<slug>.
+ */
+export function slugify(texte: string): string {
+  return texte
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')   // retire les diacritiques
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')       // tout caractère non alphanumérique → tiret
+    .replace(/^-+|-+$/g, '')           // tirets de début/fin
 }
 
 export function nomLisible(key: string): string {
@@ -307,10 +322,17 @@ export function getLivres(): Livre[] {
   // Une ligne sans id est considérée comme une édition de l'ouvrage précédent
   // (la dernière ligne possédant un id). On la replie dans son tableau `editions`.
   const livres: Livre[] = []
+  // Garantit l'unicité des slugs : un titre dupliqué reçoit un suffixe -2, -3…
+  const slugsUtilises = new Map<string, number>()
   for (const ligne of lignes) {
     if (ligne.id && ligne.id.trim() !== '') {
+      let slug = slugify(ligne.titre) || slugify(ligne.id)
+      const n = slugsUtilises.get(slug) ?? 0
+      slugsUtilises.set(slug, n + 1)
+      if (n > 0) slug = `${slug}-${n + 1}`
       livres.push({
         ...ligne,
+        slug,
         auteur: ligne.auteur?.includes(';')
           ? ligne.auteur.split(';').map(a => a.trim())
           : ligne.auteur,
@@ -361,12 +383,14 @@ export function getChunksTranscription(livreId: string): TranscriptionChunk[] {
   return chunks
 }
 
-export function getLivreAvecTranscription(id: string): LivreAvecTranscription | null {
+export function getLivreAvecTranscription(slugOuId: string): LivreAvecTranscription | null {
   const livres = getLivres()
-  const livre = livres.find(l => l.id === id)
+  // Accepte le slug (URL publique) ou l'id nakala (appels internes / héritage)
+  const livre = livres.find(l => l.slug === slugOuId || l.id === slugOuId)
   if (!livre) return null
 
-  const xmlPath = path.join(DATA_PATH, 'transcriptions', `${id}.xml`)
+  // La transcription XML est toujours nommée d'après l'id nakala.
+  const xmlPath = path.join(DATA_PATH, 'transcriptions', `${livre.id}.xml`)
   let transcriptionPages: TranscriptionPage[] = []
   let transcriptionHtml = ''
 

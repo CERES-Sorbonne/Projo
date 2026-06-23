@@ -21,7 +21,7 @@ export default function CarteResultat({ livre, colonnesMeta, filtresActifs }) {
 
   return (
     <div className={`carte-resultat${extraits.length > 0 ? ' carte-resultat--transcription' : ''}`}>
-      <a href={url(`/livres/${livre.id}`)} className="carte-resultat-lien-titre">
+      <a href={url(`/livres/${livre.slug}`)} className="carte-resultat-lien-titre">
         <div className="carte-resultat-entete">
           <div className="carte-resultat-icone">
             <span className="material-icons">menu_book</span>

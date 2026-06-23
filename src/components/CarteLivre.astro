@@ -12,7 +12,7 @@ const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.au
 const date = livre.date as string | undefined
 ---
 
-<a href={url(`/livres/${livre.id}`)} class="carte carte-livre">
+<a href={url(`/livres/${livre.slug}`)} class="carte carte-livre">
   <div class="carte-livre-corps">
     <div class="carte-livre-icone">
       <span class="material-icons">menu_book</span>

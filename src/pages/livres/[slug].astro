@@ -9,12 +9,12 @@ import '../../styles/livre.css'
 export async function getStaticPaths() {
   const livres = getLivres()
   return livres.map(livre => ({
-    params: { id: livre.id },
+    params: { slug: livre.slug },
   }))
 }
 
-const { id } = Astro.params
-const livre = getLivreAvecTranscription(id!)
+const { slug } = Astro.params
+const livre = getLivreAvecTranscription(slug!)
 
 if (!livre) {
   return Astro.redirect('/404')
@@ -22,7 +22,7 @@ if (!livre) {
 
 const auteurs = Array.isArray(livre.auteur) ? livre.auteur.join(', ') : livre.auteur
 
-const RESERVEES = new Set(['id', 'titre', 'sous_titre', 'auteur', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages', 'editions'])
+const RESERVEES = new Set(['id', 'slug', 'titre', 'sous_titre', 'auteur', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages', 'editions'])
 const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 
 // ── Éditions ──────────────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ const metaSupp = Object.entries(livre).filter(([k]) => !RESERVEES.has(k))
 // et ses éditions côte à côte, une colonne par édition, une ligne par métadonnée.
 const editions = (livre.editions ?? []) as Record<string, string>[]
 const toutesEditions = editions.length > 0 ? [livre as Record<string, unknown>, ...editions] : []
-const CHAMPS_EXCLUS = new Set(['id', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages', 'editions'])
+const CHAMPS_EXCLUS = new Set(['id', 'slug', 'manifeste_url', 'transcriptionHtml', 'transcriptionPages', 'editions'])
 // Ordre des champs : on suit l'ordre des colonnes du CSV (clés d'une ligne édition)
 const champsEditions = editions.length > 0
   ? Object.keys(editions[0])
@@ -40,7 +40,7 @@ const champsEditions = editions.length > 0
   : []
 
 const toutesAncres = livre.transcriptionPages.flatMap(p => p.ancres ?? []).filter(a => a.inPassages)
-const baseUrl = new URL(`${import.meta.env.BASE_URL}livres/${id}`, Astro.site).toString()
+const baseUrl = new URL(`${import.meta.env.BASE_URL}livres/${slug}`, Astro.site).toString()
 const manifesteUrl = livre.manifeste_url.startsWith('http')
   ? livre.manifeste_url
   : new URL(`${import.meta.env.BASE_URL}${livre.manifeste_url}`, Astro.site).toString()
@@ -50,7 +50,7 @@ const nbPages = livre.transcriptionPages.length
 // Recherche plein-texte dans l'ouvrage : chunks calculés au build (fs),
 // passés en props à l'île React. pageN est l'attribut XML @n, pas l'index
 // de tableau — le mapping est indispensable pour clover:goto.
-const chunks = getChunksTranscription(id!)
+const chunks = getChunksTranscription(slug!)
 const pageNVersIndex = Object.fromEntries(
   livre.transcriptionPages.map((p, i) => [String(p.n), i])
 )
@@ -143,7 +143,7 @@ const pageNVersIndex = Object.fromEntries(
 
     {chunks.length > 0 && (
       <RechercheLivre
-        livreId={id}
+        livreId={slug}
         chunks={chunks}
         pageNVersIndex={pageNVersIndex}
         client:idle

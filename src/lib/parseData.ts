@@ -326,7 +326,7 @@ export function getLivres(): Livre[] {
   const slugsUtilises = new Map<string, number>()
   for (const ligne of lignes) {
     if (ligne.id && ligne.id.trim() !== '') {
-      let slug = slugify(ligne.titre) || slugify(ligne.id)
+      let slug = slugify(ligne['Titre générique']) || slugify(ligne.titre) || slugify(ligne.id)
       const n = slugsUtilises.get(slug) ?? 0
       slugsUtilises.set(slug, n + 1)
       if (n > 0) slug = `${slug}-${n + 1}`
